@@ -1,0 +1,15 @@
+# A Unity export is required before building this image. This does not run Unity.
+# Publish-Web.ps1 stages only the export and these hosting files as its context.
+FROM nginx:stable-alpine
+
+COPY scripts/unity/hosting/nginx.conf /etc/nginx/conf.d/default.conf
+COPY unity/AbbyCamp/Builds/Web/ /usr/share/nginx/html/play/
+
+RUN test -s /usr/share/nginx/html/play/index.html \
+    && test -n "$(find /usr/share/nginx/html/play/Build -name '*.wasm' -print -quit)" \
+    && test -n "$(find /usr/share/nginx/html/play/Build -name '*.data' -print -quit)" \
+    && test -z "$(find /usr/share/nginx/html/play -type f \( -name '*.gz' -o -name '*.br' -o -name '*.unityweb' \) -print -quit)"
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1

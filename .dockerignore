@@ -10,3 +10,8 @@ docker-compose.override.yml
 *.md
 .vscode
 .idea
+
+# Unity is packaged separately with Dockerfile.unity-web. The Django image
+# should never contain an editor cache, desktop player, or source art.
+unity/
+scripts/unity/

@@ -1,0 +1,25 @@
+# Separate Coolify Compose resource for a docker-loaded local image.
+# Set these two non-secret values in that resource's configuration.
+services:
+  unity-web:
+    image: ${UNITY_WEB_IMAGE:?Set the versioned image tag loaded on this server}
+    pull_policy: never
+    expose:
+      - '8080'
+    networks:
+      - proxy
+    restart: unless-stopped
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.docker.network=${UNITY_WEB_PROXY_NETWORK:-coolify}'
+      - 'traefik.http.routers.abby-unity-web.rule=Host(`${UNITY_WEB_HOST:?Set the existing app hostname without scheme}`) && (Path(`/play`) || PathPrefix(`/play/`))'
+      - 'traefik.http.routers.abby-unity-web.entrypoints=https'
+      - 'traefik.http.routers.abby-unity-web.tls=true'
+      - 'traefik.http.routers.abby-unity-web.priority=100'
+      - 'traefik.http.routers.abby-unity-web.service=abby-unity-web'
+      - 'traefik.http.services.abby-unity-web.loadbalancer.server.port=8080'
+
+networks:
+  proxy:
+    external: true
+    name: ${UNITY_WEB_PROXY_NETWORK:-coolify}

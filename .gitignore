@@ -55,3 +55,17 @@ docker-compose.override.yml
 # local. See content/rpg/README.md for where to download them.
 reward-icons/
 /.claude/worktrees
+
+# Unity client: retain Assets (including .meta), Packages, and ProjectSettings.
+unity/**/Library/
+unity/**/Temp/
+unity/**/Obj/
+unity/**/Logs/
+unity/**/UserSettings/
+unity/**/Builds/
+unity/**/Screenshots/
+unity/**/*.csproj
+unity/**/*.sln
+unity/**/*.slnx
+unity/**/MemoryCaptures/
+unity/**/Recordings/

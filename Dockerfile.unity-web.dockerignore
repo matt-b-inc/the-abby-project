@@ -1,0 +1,12 @@
+# Do not send Django data, environment files, or Unity Library to this build.
+*
+!Dockerfile.unity-web
+!scripts/
+!scripts/unity/
+!scripts/unity/hosting/
+!scripts/unity/hosting/nginx.conf
+!unity/
+!unity/AbbyCamp/
+!unity/AbbyCamp/Builds/
+!unity/AbbyCamp/Builds/Web/
+!unity/AbbyCamp/Builds/Web/**

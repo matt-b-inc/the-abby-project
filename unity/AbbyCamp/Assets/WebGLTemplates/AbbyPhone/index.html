@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#153e36">
+    <title>Abby's World</title>
+    <link rel="stylesheet" href="TemplateData/phone.css">
+  </head>
+  <body>
+    <main id="world" aria-label="Abby's interactive world">
+      <canvas id="unity-canvas" width="{{{ WIDTH }}}" height="{{{ HEIGHT }}}" tabindex="-1" aria-label="Explore your world using touch or the arrow keys"></canvas>
+      <section id="welcome" class="overlay" aria-labelledby="welcome-title">
+        <div class="card">
+          <p class="eyebrow">A little space for you</p>
+          <h1 id="welcome-title">Your world</h1>
+          <p id="welcome-message">Meet your companion and explore at your own pace.</p>
+          <button id="start" type="button">Let's explore</button>
+          <progress id="progress" value="0" max="1" aria-label="Loading your world" hidden></progress>
+          <p id="load-status" role="status" aria-live="polite"></p>
+          <a href="/">Back to Abby's app</a>
+        </div>
+      </section>
+      <section id="error" class="overlay" aria-labelledby="error-title" hidden>
+        <div class="card">
+          <h1 id="error-title">Let's try that again</h1>
+          <p id="error-message">Your world couldn't load. Check your connection, then try again.</p>
+          <button id="retry" type="button">Try again</button>
+          <a href="/">Back to Abby's app</a>
+        </div>
+      </section>
+      <noscript><p class="no-script">Turn on JavaScript to explore this world. <a href="/">Back to Abby's app</a></p></noscript>
+    </main>
+    <script>
+      (() => {
+        const canvas = document.getElementById('unity-canvas');
+        const welcome = document.getElementById('welcome');
+        const start = document.getElementById('start');
+        const progress = document.getElementById('progress');
+        const status = document.getElementById('load-status');
+        const error = document.getElementById('error');
+        const retry = document.getElementById('retry');
+        let started = false;
+        let failed = false;
+
+        function fitViewport() {
+          // The visual viewport follows browser chrome and the phone keyboard.
+          const height = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+          document.documentElement.style.setProperty('--viewport-height', `${height}px`);
+        }
+        fitViewport();
+        window.addEventListener('resize', fitViewport);
+        if (window.visualViewport) window.visualViewport.addEventListener('resize', fitViewport);
+
+        function fail(message) {
+          if (failed) return;
+          failed = true;
+          console.error('Abby world:', message);
+          welcome.hidden = true;
+          error.hidden = false;
+          retry.focus();
+        }
+        retry.addEventListener('click', () => window.location.reload());
+        canvas.addEventListener('webglcontextlost', () => {
+          document.getElementById('error-message').textContent = 'Your phone paused this world. Try again to return to your companion.';
+          fail('WebGL context lost');
+        });
+
+        const config = {
+          arguments: [],
+#if PROGRESSIVE_ASSET_LOADING
+          primaryDataUrls: {{{ JSON.stringify(PRIMARY_DATA_FILES) }}},
+          secondaryDataUrls: {{{ JSON.stringify(SECONDARY_DATA_FILES) }}},
+#else
+          dataUrl: 'Build/{{{ DATA_FILENAME }}}',
+#endif
+          frameworkUrl: 'Build/{{{ FRAMEWORK_FILENAME }}}',
+#if USE_WASM
+          codeUrl: 'Build/{{{ CODE_FILENAME }}}',
+#endif
+#if SYMBOLS_FILENAME
+          symbolsUrl: 'Build/{{{ SYMBOLS_FILENAME }}}',
+#endif
+          streamingAssetsUrl: 'StreamingAssets',
+          companyName: {{{ JSON.stringify(COMPANY_NAME) }}},
+          productName: {{{ JSON.stringify(PRODUCT_NAME) }}},
+          productVersion: {{{ JSON.stringify(PRODUCT_VERSION) }}},
+          matchWebGLToCanvasSize: true,
+          // One render pixel per CSS pixel keeps touch targets predictable and
+          // avoids rendering several million unnecessary pixels on a phone.
+          devicePixelRatio: 1,
+          showBanner: (message, type) => {
+            if (type === 'error') fail(message);
+            else console.warn('Abby world:', message);
+          }
+        };
+
+        start.addEventListener('click', () => {
+          if (started) return;
+          started = true;
+          start.disabled = true;
+          start.textContent = 'Getting ready...';
+          progress.hidden = false;
+          status.textContent = 'Loading your world...';
+          const loader = document.createElement('script');
+          loader.src = 'Build/{{{ LOADER_FILENAME }}}';
+          loader.onerror = () => fail('Could not download the Unity loader');
+          loader.onload = () => {
+            try {
+              createUnityInstance(canvas, config, (value) => {
+                progress.value = value;
+                status.textContent = value < 0.9 ? `Loading your world... ${Math.round(value * 100)}%` : 'Saying hello to your companion...';
+              }).then(() => {
+                if (failed) return;
+                welcome.hidden = true;
+                canvas.focus();
+              }).catch(fail);
+            } catch (message) {
+              fail(message);
+            }
+          };
+          document.body.appendChild(loader);
+        });
+
+        if (window.location.protocol === 'file:') {
+          document.getElementById('error-message').textContent = 'Open this world through Abby\'s app to play.';
+          fail('Unity Web builds must be served over HTTP or HTTPS');
+        }
+      })();
+    </script>
+  </body>
+</html>
