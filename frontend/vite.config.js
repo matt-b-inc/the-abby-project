@@ -58,6 +58,9 @@ export default defineConfig(({ command }) => {
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
           /^\/api\//,
+          // The separately built Unity scene is served by its own /play host.
+          // Installed PWAs must let this navigation reach that host.
+          /^\/play(?:\/|$)/,
           /^\/admin\//,
           /^\/static\//,
           /^\/media\//,
@@ -69,11 +72,14 @@ export default defineConfig(({ command }) => {
           // fully-offline boots still show recent data. NOTE: the Cache
           // Storage entries are per-browser-profile (each family member's
           // own device/profile only sees responses their own token fetched)
-          // — this is a family app on trusted devices, so a same-profile
-          // stale read is acceptable. Non-GET requests are never cached.
+          // Chronicle reads stay on the network: journals and conversations
+          // have author-controlled sharing, and an offline cached response
+          // must not cross accounts or bypass a later sharing change.
+          // Non-GET requests are never cached.
           {
             urlPattern: ({ sameOrigin, url }) =>
-              sameOrigin && url.pathname.startsWith('/api/'),
+              sameOrigin && url.pathname.startsWith('/api/')
+              && !url.pathname.startsWith('/api/chronicle/'),
             method: 'GET',
             handler: 'NetworkFirst',
             options: {

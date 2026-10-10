@@ -3,6 +3,67 @@ import { render, screen } from '@testing-library/react'
 import ChapterCard from './ChapterCard'
 
 describe('ChapterCard', () => {
+  describe.each([
+    ['current', true],
+    ['historical', false],
+  ])('%s chapter labels', (_kind, isCurrent) => {
+    it.each([
+      ['missing', undefined],
+      ['null', null],
+      ['empty', ''],
+      ['whitespace-only', ' \t\n '],
+    ])('uses the August–July span for a %s label', (_case, label) => {
+      const { container } = render(<ChapterCard chapter={{
+        chapter_year: 2025,
+        ...(label === undefined ? {} : { label }),
+        is_current: isCurrent,
+        stats: {},
+        entries: [],
+      }} />)
+
+      const title = 'August 2025 – July 2026'
+      expect(screen.getByRole('heading', { name: title })).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: title })).toBeInTheDocument()
+      expect(container.querySelector('[data-versal="true"]')).toHaveTextContent('A')
+      if (isCurrent) {
+        expect(screen.getByRole('progressbar', {
+          name: `${title} — days elapsed`,
+        })).toBeInTheDocument()
+      } else {
+        expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+      }
+    })
+
+    it.each([
+      'Kindergarten · 2016-17',
+      'Freshman Year',
+      'Age 18 · 2029-30',
+    ])('preserves the supplied label %s', (label) => {
+      render(<ChapterCard chapter={{
+        chapter_year: 2025, label, is_current: isCurrent,
+        stats: {}, entries: [],
+      }} />)
+
+      expect(screen.getByRole('heading', { name: label })).toBeInTheDocument()
+      expect(screen.getByRole('region', { name: label })).toBeInTheDocument()
+      if (isCurrent) {
+        expect(screen.getByRole('progressbar', {
+          name: `${label} — days elapsed`,
+        })).toBeInTheDocument()
+      }
+    })
+  })
+
+  it('carries the fallback span into the next century', () => {
+    render(<ChapterCard chapter={{
+      chapter_year: 1999, label: null, is_current: false,
+      stats: {}, entries: [],
+    }} />)
+    expect(screen.getByRole('heading', {
+      name: 'August 1999 – July 2000',
+    })).toBeInTheDocument()
+  })
+
   it('current-chapter shows live progress bar', () => {
     render(<ChapterCard chapter={{
       chapter_year: 2025, label: 'Freshman Year', grade: 9,

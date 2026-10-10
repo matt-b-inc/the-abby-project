@@ -16,7 +16,12 @@ function schoolDaysProgress(chapterYear) {
 }
 
 export default function ChapterCard({ chapter }) {
-  const { label, is_current, stats, entries } = chapter
+  const { is_current, stats, entries } = chapter
+  // ChapterCard has no birth date or school-entry context. Keep supplied
+  // school/age labels; otherwise name the actual August–July chapter span.
+  const label = typeof chapter.label === 'string' && chapter.label.trim()
+    ? chapter.label
+    : `August ${chapter.chapter_year} – July ${Number(chapter.chapter_year) + 1}`
   const statLines = RECAP_STAT_FIELDS
     .map((f) => [f, stats?.[f.key]])
     .filter(([, v]) => v !== undefined && v !== null)

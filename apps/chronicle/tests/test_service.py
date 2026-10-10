@@ -138,10 +138,14 @@ class FreezeRecapTests(TestCase):
             completed_at=datetime(2026, 2, 1, 12, 0, tzinfo=timezone.utc),
         )
         # CoinLedger.amount is IntegerField — plain int, no Decimal.
-        CoinLedger.objects.create(
+        ledger = CoinLedger.objects.create(
             user=self.user,
             amount=50,
             reason=CoinLedger.Reason.ADJUSTMENT,
+        )
+        # Keep the earned coins in the chapter being tested as the clock moves.
+        CoinLedger.objects.filter(pk=ledger.pk).update(
+            created_at=datetime(2025, 10, 15, 12, 0, tzinfo=timezone.utc),
         )
 
     def test_freeze_recap_aggregates_into_metadata(self):

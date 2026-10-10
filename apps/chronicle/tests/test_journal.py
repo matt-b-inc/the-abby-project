@@ -20,7 +20,6 @@ from apps.achievements.models import (
     SkillCategory,
     SkillProgress,
     Subject,
-    UserBadge,
 )
 from apps.chronicle.models import ChronicleEntry
 from apps.chronicle.services import ChronicleService
@@ -97,10 +96,12 @@ class WriteJournalTests(TestCase):
         self.assertTrue(len(entry.title) <= 60 + 1)  # allow trailing ellipsis
         self.assertTrue(entry.title.startswith("This is the kind"))
 
-    def test_autofills_title_from_date_when_body_blank(self):
-        entry = ChronicleService.write_journal(self.user, title="", summary="")
-        today = timezone.localdate()
-        self.assertIn(str(today.day), entry.title)
+    def test_blank_entry_is_not_saved_or_rewarded(self):
+        from rest_framework.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            ChronicleService.write_journal(self.user, title="", summary="")
+        self.assertFalse(ChronicleEntry.objects.filter(user=self.user).exists())
 
     def test_honors_user_provided_title(self):
         entry = ChronicleService.write_journal(

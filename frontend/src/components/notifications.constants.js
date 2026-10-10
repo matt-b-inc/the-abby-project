@@ -2,7 +2,7 @@ import {
   Award, Star, ListChecks, BookOpen, Sparkles, Hammer, Coins, Gift,
   Cake, Flame, ScrollText, Palette, Footprints, Backpack, PawPrint,
   AlertTriangle, PackageCheck, BellRing, Hourglass, Trophy, Crown,
-  Map as MapIcon, Box, Printer, CircleAlert,
+  Map as MapIcon, Box, Printer, CircleAlert, MessageCircle,
 } from 'lucide-react';
 
 // Sensible default routes per notification type. Used as a fallback when
@@ -73,6 +73,7 @@ export const NOTIFICATION_TYPE_META = {
   savings_goal_completed:  { icon: Coins,         accent: 'gold',   route: '/quests?tab=ventures' },
   birthday:                { icon: Cake,          accent: 'gold',   route: '/chronicle?tab=yearbook' },
   chronicle_first_ever:    { icon: ScrollText,    accent: 'teal',   route: '/chronicle?tab=yearbook' },
+  journal_reply:           { icon: MessageCircle, accent: 'teal',  route: '/chronicle?tab=journal' },
   comeback_suggested:      { icon: Footprints,    accent: 'teal',   route: '/trials' },
   creation_submitted:      { icon: Palette,       accent: 'teal',   route: '/chronicle?tab=sketchbook' },
   creation_approved:       { icon: Palette,       accent: 'moss',   route: '/chronicle?tab=sketchbook' },

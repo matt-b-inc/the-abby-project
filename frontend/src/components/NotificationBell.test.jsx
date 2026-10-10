@@ -1,12 +1,19 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import NotificationBell from './NotificationBell.jsx';
 import MockPulse from '../test/pulse.jsx';
 import { emptyPulse } from '../test/pulseFixtures.js';
 import { server } from '../test/server.js';
+import { buildNotification } from '../test/factories.js';
+import { spyHandler } from '../test/spy.js';
+
+function LocationProbe() {
+  const { pathname, search } = useLocation();
+  return <output data-testid="location">{pathname}{search}</output>;
+}
 
 function setViewport(desktop) {
   window.matchMedia = vi.fn().mockImplementation((query) => ({
@@ -34,6 +41,7 @@ function renderBell({ desktop = true, notifications = [], unread = 0, pulse } = 
     <MockPulse pulse={seeded}>
       <MemoryRouter>
         <NotificationBell />
+        <LocationProbe />
       </MemoryRouter>
     </MockPulse>,
   );
@@ -67,6 +75,7 @@ describe('NotificationBell', () => {
     const row = await screen.findByText('go');
     await user.click(row);
     await waitFor(() => expect(screen.queryByText('go')).toBeNull());
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/quests$/);
   });
 
   it('renders the type-specific lucide icon for a known notification type', async () => {
@@ -102,6 +111,123 @@ describe('NotificationBell', () => {
     // than a no-op.
     await user.click(row);
     await waitFor(() => expect(screen.queryByText('Sealed!')).toBeNull());
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/atlas\?tab=badges$/);
+  });
+
+  it.each([
+    ['desktop', 'Enter', true, '{Enter}'],
+    ['desktop', 'Space', true, ' '],
+    ['mobile', 'Enter', false, '{Enter}'],
+    ['mobile', 'Space', false, ' '],
+  ])('opens a family reply from the %s list with %s', async (_shell, _keyName, desktop, key) => {
+    const markRead = spyHandler('post', /\/api\/notifications\/17\/mark_read\/$/, {});
+    server.use(markRead.handler);
+    const user = userEvent.setup();
+    renderBell({
+      desktop,
+      unread: 1,
+      notifications: [buildNotification({
+        id: 17,
+        notification_type: 'journal_reply',
+        title: 'Mom replied about your grade',
+        message: 'That took a lot of practice!',
+        link: '/chronicle?tab=grades',
+      })],
+    });
+
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Notifications (1 unread)' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const list = desktop
+      ? screen
+      : within(await screen.findByRole('dialog', { name: 'Notifications' }));
+    const row = await list.findByRole('button', {
+      name: 'Mom replied about your grade: That took a lot of practice!',
+    });
+    expect(row.tagName).toBe('BUTTON');
+    expect(row).toHaveAttribute('type', 'button');
+    expect(row).toHaveClass('w-full', 'text-left', 'focus-visible:ring-2', 'focus-visible:ring-inset', 'focus-visible:ring-sheikah-teal');
+
+    // Desktop focus starts on the bell; the sheet starts on its close button.
+    // Both tab orders reach Mark all read, then the notification row.
+    await user.tab();
+    expect(list.getByRole('button', { name: 'Mark all read' })).toHaveFocus();
+    await user.tab();
+    expect(row).toHaveFocus();
+    await user.keyboard(key);
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/chronicle\?tab=grades$/));
+    expect(markRead.calls).toHaveLength(1);
+    expect(markRead.calls[0]).toEqual({
+      url: expect.stringMatching(/\/api\/notifications\/17\/mark_read\/$/),
+      method: 'POST',
+      body: null,
+    });
+    await waitFor(() => expect(screen.queryByText('Mom replied about your grade')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Notifications' })).toBeNull();
+    expect(screen.queryByText('1')).toBeNull();
+  });
+
+  it.each([
+    ['desktop', true, '{Enter}'],
+    ['mobile', false, ' '],
+  ])('uses the family reply default route from the %s list', async (_shell, desktop, key) => {
+    const markRead = spyHandler('post', /\/api\/notifications\/18\/mark_read\/$/, {});
+    server.use(markRead.handler);
+    const user = userEvent.setup();
+    renderBell({
+      desktop,
+      notifications: [buildNotification({
+        id: 18,
+        notification_type: 'journal_reply',
+        title: 'Dad replied in your journal',
+        message: '',
+        is_read: true,
+        link: '',
+      })],
+    });
+    await user.click(screen.getByRole('button', { name: 'Notifications' }));
+    const row = await screen.findByRole('button', { name: 'Dad replied in your journal' });
+    await user.tab();
+    expect(row).toHaveFocus();
+    await user.keyboard(key);
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/chronicle\?tab=journal$/));
+    await waitFor(() => expect(screen.queryByText('Dad replied in your journal')).toBeNull());
+    expect(markRead.calls).toHaveLength(0);
+  });
+
+  it.each([
+    ['desktop', true],
+    ['mobile', false],
+  ])('still opens the destination on %s when marking read fails', async (_shell, desktop) => {
+    const markRead = spyHandler('post', /\/api\/notifications\/19\/mark_read\/$/,
+      HttpResponse.json({ detail: 'Service unavailable' }, { status: 503 }));
+    server.use(markRead.handler);
+    const user = userEvent.setup();
+    renderBell({
+      desktop,
+      unread: 1,
+      notifications: [buildNotification({
+        id: 19,
+        title: 'New quest',
+        message: '',
+        link: '/quests',
+      })],
+    });
+    await user.click(screen.getByRole('button', { name: 'Notifications (1 unread)' }));
+    await user.click(await screen.findByRole('button', { name: 'New quest' }));
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/quests$/));
+    expect(markRead.calls).toHaveLength(1);
+    expect(markRead.calls[0]).toEqual({
+      url: expect.stringMatching(/\/api\/notifications\/19\/mark_read\/$/),
+      method: 'POST',
+      body: null,
+    });
+    await waitFor(() => expect(screen.queryByText('New quest')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Notifications (1 unread)' })).toBeInTheDocument();
   });
 
   it('renders the heartbeat list when opened', async () => {
@@ -152,17 +278,51 @@ describe('NotificationBell', () => {
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('marks a single notification read on click', async () => {
-    server.use(http.post(/\/notifications\/5\/mark_read/, () => HttpResponse.json({})));
+  it.each([
+    ['desktop', true, '{Enter}'],
+    ['mobile', false, ' '],
+    ['desktop with a pointer', true, null],
+    ['mobile with a pointer', false, null],
+  ])('marks a no-link notification read on %s without closing or navigating', async (_shell, desktop, key) => {
+    const markRead = spyHandler('post', /\/api\/notifications\/5\/mark_read\/$/, {});
+    server.use(markRead.handler);
     const user = userEvent.setup();
     renderBell({
+      desktop,
       unread: 1,
-      notifications: [{ id: 5, title: 'clickable', is_read: false, created_at: 'x' }],
+      notifications: [buildNotification({
+        id: 5,
+        notification_type: 'unknown_type',
+        title: 'Family update',
+        message: '',
+        link: '',
+      })],
     });
-    await user.click(screen.getAllByRole('button')[0]);
-    const row = await screen.findByText('clickable');
-    await user.click(row);
+    await user.click(screen.getByRole('button', { name: 'Notifications (1 unread)' }));
+    const row = await screen.findByRole('button', { name: 'Family update' });
+    await user.tab();
+    await user.tab();
+    expect(row).toHaveFocus();
+    if (key) await user.keyboard(key);
+    else await user.click(row);
     await waitFor(() => expect(screen.queryByText('1')).toBeNull());
+    expect(markRead.calls).toHaveLength(1);
+    expect(markRead.calls[0]).toEqual({
+      url: expect.stringMatching(/\/api\/notifications\/5\/mark_read\/$/),
+      method: 'POST',
+      body: null,
+    });
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    expect(screen.getByRole('button', { name: 'Family update' })).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Mark all read' })).toBeNull();
+    if (!desktop) expect(screen.getByRole('dialog', { name: 'Notifications' })).toBeInTheDocument();
+
+    // Re-activation after the row becomes read remains a no-op.
+    if (key) await user.keyboard(key);
+    else await user.click(row);
+    expect(markRead.calls).toHaveLength(1);
+    expect(screen.getByTestId('location')).toHaveTextContent(/^\/$/);
+    expect(screen.getByRole('button', { name: 'Family update' })).toBeInTheDocument();
   });
 
   it('renders zero unread by default', async () => {

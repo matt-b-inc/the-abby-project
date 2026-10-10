@@ -21,6 +21,7 @@ import {
 import Button from '../Button';
 import { SelectField, TextAreaField } from '../form';
 import JournalEntryFormModal from '../../pages/yearbook/JournalEntryFormModal';
+import GradeEntryFormModal from '../../pages/grades/GradeEntryFormModal';
 import CreationLogModal from '../CreationLogModal';
 import MovementSessionLogModal from '../MovementSessionLogModal';
 import HomeworkFormModal from '../../pages/Homework/HomeworkFormModal';
@@ -177,6 +178,7 @@ export default function QuickActionsSheet({
   const { isParent } = useRole();
   const [pane, setPane] = useState('menu'); // 'menu' | 'clock'
   const [journalOpen, setJournalOpen] = useState(false);
+  const [gradeOpen, setGradeOpen] = useState(false);
   const [creationOpen, setCreationOpen] = useState(false);
   const [movementOpen, setMovementOpen] = useState(false);
   const [homeworkOpen, setHomeworkOpen] = useState(false);
@@ -249,6 +251,16 @@ export default function QuickActionsSheet({
 
   return (
     <>
+    {gradeOpen && (
+      <GradeEntryFormModal
+        onClose={() => setGradeOpen(false)}
+        onSaved={(entry) => {
+          setGradeOpen(false);
+          onClose();
+          navigate('/chronicle?tab=grades', { state: { gradeSavedId: entry.id } });
+        }}
+      />
+    )}
     {journalOpen && (
       <JournalEntryFormModal
         mode={journalMode}
@@ -358,6 +370,13 @@ export default function QuickActionsSheet({
               />
               {/* Study rows carry the tab's name with the old one as the hint,
                   the same shape as the duty / ritual rows below. */}
+              <ActionRow
+                icon={<BookOpen size={18} />}
+                label="Log a grade"
+                hint="Keep a result and what you learned"
+                tone="royal"
+                onClick={() => setGradeOpen(true)}
+              />
               <ActionRow
                 icon={<BookOpen size={18} />}
                 label="Add study"

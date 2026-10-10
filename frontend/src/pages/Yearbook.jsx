@@ -11,6 +11,7 @@ import {
   PROGRESS_TIER,
 } from '../components/atlas/mastery.constants'
 import { useRole } from '../hooks/useRole'
+import useChronicleRevision from '../hooks/useChronicleRevision'
 import { getChildren, getChronicleSummary } from '../api'
 import { normalizeList } from '../utils/api'
 import ChapterCard from './yearbook/ChapterCard'
@@ -20,60 +21,89 @@ const ACTIVE_CHAPTER_KEY_PREFIX = 'atlas:yearbook:active-chapter:'
 
 export default function Yearbook() {
   const { user, isParent } = useRole()
-  const [state, setState] = useState({ loading: true, chapters: [], error: null })
-  const [showAdd, setShowAdd] = useState(false)
-  const [children, setChildren] = useState([])
+  if (!user?.id) return <Loader />
+
+  // Auth can change without this page unmounting. Keep the child list and
+  // selection inside an account-scoped tree so neither survives that change.
+  return <AccountYearbook key={`${user.id}:${user.role}`} user={user} isParent={isParent} />
+}
+
+function AccountYearbook({ user, isParent }) {
+  const [childState, setChildState] = useState({ loading: true, children: [], error: null })
+  const [childrenRequest, setChildrenRequest] = useState(0)
   const [selectedChildId, setSelectedChildId] = useState(null)
-  // User-clicked override per (target child). Derived effective active id
-  // below uses this when valid and falls back when the chapter list shifts
-  // — avoids a setState-in-effect for the "data changed" reconciliation.
-  const [activeChapterOverride, setActiveChapterOverride] = useState({})
+  const targetUserId = isParent ? selectedChildId ?? childState.children[0]?.id : user.id
+  const revision = useChronicleRevision(targetUserId)
 
-  // The chronicle summary + the "Add memory" POST both need a target child.
-  // Children view their own yearbook; parents pick from their kid list.
-  const targetUserId = isParent ? selectedChildId : user?.id
-
-  // Parent path: fetch kid list + default-select the first.
   useEffect(() => {
     if (!isParent) return undefined
     let cancelled = false
     getChildren()
       .then((res) => {
-        if (cancelled) return
-        const list = normalizeList(res)
-        setChildren(list)
-        if (list.length > 0) {
-          setSelectedChildId((prev) => prev ?? list[0].id)
-        } else {
-          setState({ loading: false, chapters: [], error: null })
+        if (!cancelled) {
+          setChildState({ loading: false, children: normalizeList(res), error: null })
         }
       })
       .catch((err) => {
-        if (!cancelled) setState({ loading: false, chapters: [], error: err })
+        if (!cancelled) setChildState({ loading: false, children: [], error: err })
       })
     return () => {
       cancelled = true
     }
-  }, [isParent])
+  }, [isParent, childrenRequest])
 
-  // A parent with no child selected, or a child with no birthday on file,
-  // has nothing to fetch. Deriving that at render — rather than writing the
-  // resolved-empty shape into state from the effect — keeps the effect free
-  // of a synchronous setState, which cost a render pass every time.
-  const canFetch = isParent ? Boolean(targetUserId) : Boolean(user?.date_of_birth)
-
-  const fetchSummary = () => {
-    if (!canFetch) return
-    getChronicleSummary(isParent ? targetUserId : undefined)
-      .then((res) => {
-        const chapters = res?.chapters ?? []
-        setState({ loading: false, chapters, error: null })
-      })
-      .catch((err) => setState({ loading: false, chapters: [], error: err }))
+  if (isParent && childState.loading) return <Loader />
+  if (isParent && childState.error) {
+    return <YearbookLoadError error={childState.error} onRetry={() => setChildrenRequest((n) => n + 1)} />
+  }
+  if (isParent && childState.children.length === 0) {
+    return (
+      <EmptyState>
+        <p className="font-semibold mb-1">No children yet</p>
+        <p>Create a child account on the Manage page to start a yearbook.</p>
+      </EmptyState>
+    )
   }
 
+  // A signed-in child can read saved memories without a birthday on file.
+  return (
+    <YearbookHistory
+      key={`${targetUserId}:${revision}`}
+      targetUserId={targetUserId}
+      isParent={isParent}
+      childOptions={childState.children}
+      onSelectChild={setSelectedChildId}
+    />
+  )
+}
+
+function YearbookLoadError({ error, onRetry }) {
+  return (
+    <div className="space-y-3 max-w-xl mx-auto">
+      <ErrorAlert message={error?.message || 'Could not load the yearbook.'} />
+      <Button variant="secondary" size="sm" onClick={onRetry}>
+        Try again
+      </Button>
+    </div>
+  )
+}
+
+function YearbookHistory({ targetUserId, isParent, childOptions, onSelectChild }) {
+  // Remounting this tree on a target change immediately clears history,
+  // entry dialogs/replies, and the add-memory draft together.
+  const [state, setState] = useState({ loading: true, chapters: [], error: null })
+  const [showAdd, setShowAdd] = useState(false)
+  const [summaryRequest, setSummaryRequest] = useState(0)
+  // User-clicked override per (target child). Derived effective active id
+  // below uses this when valid and falls back when the chapter list shifts
+  // — avoids a setState-in-effect for the "data changed" reconciliation.
+  const [activeChapterOverride, setActiveChapterOverride] = useState({})
+
+  // Initial loads, retries and post-save refreshes share the same cleanup
+  // guard. A late response cannot replace another child/account's archive.
+  const fetchSummary = () => setSummaryRequest((n) => n + 1)
+
   useEffect(() => {
-    if (!canFetch) return undefined
     let cancelled = false
     getChronicleSummary(isParent ? targetUserId : undefined)
       .then((res) => {
@@ -87,12 +117,12 @@ export default function Yearbook() {
     return () => {
       cancelled = true
     }
-  }, [canFetch, targetUserId, isParent, user?.id, user?.date_of_birth])
+  }, [targetUserId, isParent, summaryRequest])
 
   // Sort chronologically so §I → §N reads left-to-right on the shelf, with
   // the current chapter on the right edge — same as flipping through a
   // book's spines.
-  const view = canFetch ? state : { loading: false, chapters: [], error: null }
+  const view = state
 
   const sortedChapters = useMemo(
     () => [...(view.chapters || [])].sort((a, b) => a.chapter_year - b.chapter_year),
@@ -152,37 +182,6 @@ export default function Yearbook() {
     sortedChapters.find((c) => String(c.chapter_year) === activeChapterId)
     || sortedChapters[sortedChapters.length - 1]
 
-  if (view.loading) return <Loader />
-
-  if (view.error) {
-    return (
-      <div className="space-y-3 max-w-xl mx-auto">
-        <ErrorAlert message={view.error?.message || 'Could not load the yearbook.'} />
-        <Button variant="secondary" size="sm" onClick={fetchSummary}>
-          Try again
-        </Button>
-      </div>
-    )
-  }
-
-  if (!isParent && !user?.date_of_birth) {
-    return (
-      <EmptyState>
-        <p className="font-semibold mb-1">Set your date of birth</p>
-        <p>A parent can set it on the Manage page — then birthdays, chapters, and yearly recaps can ink themselves.</p>
-      </EmptyState>
-    )
-  }
-
-  if (isParent && children.length === 0) {
-    return (
-      <EmptyState>
-        <p className="font-semibold mb-1">No children yet</p>
-        <p>Create a child account on the Manage page to start a yearbook.</p>
-      </EmptyState>
-    )
-  }
-
   return (
     <div className="space-y-4">
       {/* Below md the Chronicle hub's tab strip already names this page —
@@ -201,11 +200,11 @@ export default function Yearbook() {
           <SelectField
             id="yearbook-child-picker"
             label="Viewing"
-            value={selectedChildId ?? ''}
-            onChange={(e) => setSelectedChildId(parseInt(e.target.value, 10))}
+            value={targetUserId}
+            onChange={(e) => onSelectChild(parseInt(e.target.value, 10))}
             className="flex-1 max-w-xs"
           >
-            {children.map((child) => (
+            {childOptions.map((child) => (
               <option key={child.id} value={child.id}>
                 {child.first_name || child.username}
               </option>
@@ -214,22 +213,28 @@ export default function Yearbook() {
           <Button
             variant="secondary"
             onClick={() => setShowAdd(true)}
-            disabled={!selectedChildId}
+            disabled={!targetUserId}
           >
             Add memory
           </Button>
         </div>
       )}
-      {shelfItems.length > 0 && (
-        <TomeShelf
-          items={shelfItems}
-          activeId={activeChapterId}
-          onSelect={setActiveChapterId}
-          ariaLabel="Yearbook chapters"
-        />
-      )}
-      {activeChapter && (
-        <ChapterCard key={activeChapter.chapter_year} chapter={activeChapter} />
+      {view.loading ? <Loader /> : view.error ? (
+        <YearbookLoadError error={view.error} onRetry={fetchSummary} />
+      ) : (
+        <>
+          {shelfItems.length > 0 && (
+            <TomeShelf
+              items={shelfItems}
+              activeId={activeChapterId}
+              onSelect={setActiveChapterId}
+              ariaLabel="Yearbook chapters"
+            />
+          )}
+          {activeChapter && (
+            <ChapterCard key={activeChapter.chapter_year} chapter={activeChapter} />
+          )}
+        </>
       )}
       {showAdd && targetUserId && (
         <ManualEntryFormModal

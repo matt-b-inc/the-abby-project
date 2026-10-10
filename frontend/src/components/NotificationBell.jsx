@@ -118,34 +118,38 @@ export default function NotificationBell() {
       notifications.slice(0, 20).map((n) => {
         const { Icon, accentClass, defaultRoute } = metaForNotification(n);
         const clickable = Boolean(n.link || defaultRoute);
+        // intentional: native row button keeps the edge-to-edge list styling;
+        // no-link rows still invoke the existing mark-read action.
         return (
-          <div
+          <button
             key={n.id}
+            type="button"
+            aria-label={n.message ? `${n.title}: ${n.message}` : n.title}
             onClick={() => handleNotificationClick(n)}
-            className={`p-3 border-b border-ink-page-shadow/50 last:border-0 transition-colors ${
+            className={`block w-full min-h-11 text-left p-3 border-b border-ink-page-shadow/50 last:border-0 transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sheikah-teal ${
               !n.is_read ? 'bg-amber-primary/5' : ''
             } ${clickable ? 'cursor-pointer hover:bg-ink-page-shadow/60/30' : ''}`}
           >
-            <div className="flex items-start gap-2">
+            <span className="flex items-start gap-2">
               {!n.is_read && (
-                <span className="w-2 h-2 bg-amber-primary rounded-full mt-1.5 shrink-0" />
+                <span aria-hidden="true" className="w-2 h-2 bg-amber-primary rounded-full mt-1.5 shrink-0" />
               )}
               <Icon
                 size={16}
                 aria-hidden="true"
                 className={`mt-0.5 shrink-0 ${accentClass}`}
               />
-              <div className="min-w-0 flex-1">
-                <div className="text-body font-medium">{n.title}</div>
+              <span className="min-w-0 flex-1">
+                <span className="block text-body font-medium">{n.title}</span>
                 {n.message && (
-                  <div className="text-caption text-ink-whisper mt-0.5">{n.message}</div>
+                  <span className="block text-caption text-ink-whisper mt-0.5">{n.message}</span>
                 )}
-                <div className="text-micro text-ink-whisper mt-1">
+                <span className="block text-micro text-ink-whisper mt-1">
                   {formatDate(n.created_at)}
-                </div>
-              </div>
-            </div>
-          </div>
+                </span>
+              </span>
+            </span>
+          </button>
         );
       })
     )

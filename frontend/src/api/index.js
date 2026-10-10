@@ -562,17 +562,32 @@ export const markChronicleViewed = (id) => api.post(`/chronicle/${id}/mark-viewe
 export const createManualChronicleEntry = (data) => api.post('/chronicle/manual/', data);
 export const updateManualChronicleEntry = (id, data) => api.patch(`/chronicle/${id}/`, data);
 export const deleteChronicleEntry = (id) => api.delete(`/chronicle/${id}/`);
+export const getChronicleComments = (id) => api.get(`/chronicle/entries/${id}/comments/`);
+export const addChronicleComment = (id, payload) =>
+  api.post(`/chronicle/entries/${id}/comments/`, payload);
 // Child-authored journal entries. POST self-scopes to request.user and
 // is one-per-local-day — a second POST returns 409 with the existing
 // entry in the `existing` key of the response body. PATCH is restricted
 // to same-local-day edits by the backend.
-export const writeJournal = ({ title, summary }) =>
-  api.post('/chronicle/journal/', { title, summary });
-export const updateJournalEntry = (id, { title, summary }) =>
-  api.patch(`/chronicle/${id}/journal/`, { title, summary });
+export const writeJournal = ({ title, summary, is_private, client_entry_id }) =>
+  api.post('/chronicle/journal/', { title, summary, is_private, client_entry_id });
+export const updateJournalEntry = (id, { title, summary, is_private }) =>
+  api.patch(`/chronicle/${id}/journal/`, { title, summary, is_private });
 // Fetch today's journal entry for request.user; returns null when the
 // child hasn't written yet (the backend 204s and api.get resolves to null).
 export const getTodayJournal = () => api.get('/chronicle/journal/today/');
+
+// Grade memories retain their original marking format. Recognition is
+// returned by the server and is independent of the recorded mark.
+export const getGrades = (params = {}) => {
+  const qs = Object.entries(params)
+    .filter(([, value]) => value !== undefined && value !== null && value !== '')
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join('&');
+  return api.get(`/chronicle/grades/${qs ? `?${qs}` : ''}`);
+};
+export const writeGrade = (payload) => api.post('/chronicle/grades/', payload);
+export const updateGradeEntry = (id, payload) => api.patch(`/chronicle/${id}/grade/`, payload);
 
 // Forge — 3D print requests
 // A request may carry an uploaded model file, so `createPrintRequest` takes

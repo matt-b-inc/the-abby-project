@@ -21,6 +21,7 @@ from typing import Any
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied as DRFPermissionDenied
 
+from apps.chronicle.access import visible_chronicle_entries
 from apps.chronicle.models import ChronicleEntry
 from apps.chronicle.services import ChronicleService, JournalAlreadyExistsError
 
@@ -53,7 +54,7 @@ def _chapter_year_for(d: date) -> int:
 def list_chronicle_entries(params: ListChronicleEntriesIn) -> dict[str, Any]:
     """Read-only timeline of all chronicle entries for a user.
 
-    Returns every kind (journal, creation, manual, birthday, milestone,
+    Returns every kind (journal, grade, creation, manual, birthday, milestone,
     first_ever, recap, chapter boundaries) interleaved by ``occurred_on``.
     Children see their own; parents see any child in their family.
 
@@ -68,7 +69,7 @@ def list_chronicle_entries(params: ListChronicleEntriesIn) -> dict[str, Any]:
     """
     user = get_current_user()
     target = resolve_target_user(user, params.user_id)
-    qs = ChronicleEntry.objects.filter(user=target)
+    qs = visible_chronicle_entries(user, ChronicleEntry.objects.filter(user=target))
     if params.chapter_year is not None:
         qs = qs.filter(chapter_year=params.chapter_year)
     if params.kind:
@@ -93,7 +94,8 @@ def get_chronicle_summary(params: GetChronicleSummaryIn) -> dict[str, Any]:
     target = resolve_target_user(user, params.user_id)
 
     entries = list(
-        ChronicleEntry.objects.filter(user=target).order_by("-chapter_year", "-occurred_on"),
+        visible_chronicle_entries(user, ChronicleEntry.objects.filter(user=target))
+        .order_by("-chapter_year", "-occurred_on"),
     )
     by_year: dict[int, list] = defaultdict(list)
     for e in entries:
@@ -128,14 +130,7 @@ def mark_chronicle_viewed(params: MarkChronicleViewedIn) -> dict[str, Any]:
     entry (low-impact alone but violates the scoping doctrine).
     """
     user = get_current_user()
-    qs = ChronicleEntry.objects.all()
-    if user.role == "parent":
-        family_id = getattr(user, "family_id", None)
-        if family_id is None:
-            raise MCPNotFoundError(f"ChronicleEntry {params.entry_id} not found.")
-        qs = qs.filter(user__family_id=family_id)
-    else:
-        qs = qs.filter(user=user)
+    qs = visible_chronicle_entries(user, ChronicleEntry.objects.all())
     try:
         entry = qs.get(pk=params.entry_id)
     except ChronicleEntry.DoesNotExist:

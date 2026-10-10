@@ -1,5 +1,6 @@
 import logging
 
+from django.contrib.auth import get_user_model
 from django.db import models, transaction
 
 from . import criteria
@@ -8,6 +9,17 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _lock_award_user(user):
+    """Serialize awards, including first progress rows, within an atomic block.
+
+    Always lock the user before SkillProgress or UserBadge rows. Receipt callers
+    use the same order and may already hold this lock. PostgreSQL's NO KEY
+    UPDATE also permits FK inserts by other activity transactions before they
+    reach the award gate, avoiding a KEY SHARE -> UPDATE lock upgrade deadlock.
+    """
+    get_user_model().objects.select_for_update(no_key=True).get(pk=user.pk)
 
 
 class SkillService:
@@ -23,9 +35,11 @@ class SkillService:
         return level
 
     @classmethod
+    @transaction.atomic
     def award_xp(cls, user, skill, amount):
         """Award XP to a user for a specific skill. Returns the SkillProgress."""
-        progress, _ = SkillProgress.objects.get_or_create(
+        _lock_award_user(user)
+        progress, _ = SkillProgress.objects.select_for_update().get_or_create(
             user=user, skill=skill,
             defaults={"unlocked": not skill.is_locked_by_default},
         )
@@ -34,7 +48,7 @@ class SkillService:
 
         progress.xp_points += amount
         progress.level = cls.level_for_xp(progress.xp_points)
-        progress.save()
+        progress.save(update_fields=["xp_points", "level"])
 
         cls.evaluate_unlocks(user)
         return progress
@@ -46,6 +60,7 @@ class SkillService:
         cls.distribute_tagged_xp(user, tags, total_xp)
 
     @classmethod
+    @transaction.atomic
     def distribute_tagged_xp(cls, user, tags, total_xp):
         """Generic weighted-tag XP distribution.
 
@@ -55,6 +70,7 @@ class SkillService:
         declares "doing this exercises these skills." Returns the list of
         per-skill XP amounts actually awarded (for logging).
         """
+        _lock_award_user(user)
         awarded = []
         for skill, skill_xp in cls._iter_tagged_xp(tags, total_xp):
             cls.award_xp(user, skill, skill_xp)
@@ -83,13 +99,15 @@ class SkillService:
                 yield tag.skill, skill_xp
 
     @classmethod
+    @transaction.atomic
     def evaluate_unlocks(cls, user):
         """Check all locked skills to see if prerequisites are now met."""
-        locked_skills = Skill.objects.filter(is_locked_by_default=True)
+        _lock_award_user(user)
+        locked_skills = Skill.objects.filter(is_locked_by_default=True).order_by("pk")
         newly_unlocked = []
 
         for skill in locked_skills:
-            progress, _ = SkillProgress.objects.get_or_create(
+            progress, _ = SkillProgress.objects.select_for_update().get_or_create(
                 user=user, skill=skill,
                 defaults={"unlocked": False},
             )
@@ -111,7 +129,7 @@ class SkillService:
 
             if all_met:
                 progress.unlocked = True
-                progress.save()
+                progress.save(update_fields=["unlocked"])
                 newly_unlocked.append(skill)
 
         return newly_unlocked
@@ -288,6 +306,8 @@ class AwardService:
         from apps.activity.services import ActivityLogService, activity_scope
         from apps.rpg.services import xp_boost_multiplier
 
+        _lock_award_user(user)
+
         # Apply Scholar's Draught multiplier before distribution so the full
         # boosted total flows through the tag-weighted split and the activity
         # log. The original xp value is preserved in the event summary so
@@ -395,6 +415,7 @@ class AwardService:
         return AwardService._distribute_tagged_xp_logged(user, tags, total_xp)
 
     @staticmethod
+    @transaction.atomic
     def _distribute_tagged_xp_logged(user, tags, total_xp):
         """Distribute ``total_xp`` across any weighted-tag iterable.
 
@@ -404,6 +425,7 @@ class AwardService:
         by-weight math with ``SkillService.distribute_tagged_xp`` via
         ``_iter_tagged_xp`` — they cannot diverge.
         """
+        _lock_award_user(user)
         rows = []
         for skill, skill_xp in SkillService._iter_tagged_xp(tags, total_xp):
             SkillService.award_xp(user, skill, skill_xp)
@@ -417,6 +439,7 @@ class AwardService:
 
 class BadgeService:
     @classmethod
+    @transaction.atomic
     def evaluate_badges(cls, user, *, created_by=None, scopes=None):
         """Check unearned badges and award any newly qualified.
 
@@ -436,6 +459,10 @@ class BadgeService:
             activity_scope,
         )
 
+        # Lock before the unique UserBadge insert: otherwise an XP award can
+        # hold the user lock while waiting for that insert's transaction.
+        # The earned marker and its payouts must also commit together.
+        _lock_award_user(user)
         earned_ids = set(
             UserBadge.objects.filter(user=user).values_list("badge_id", flat=True)
         )
@@ -512,15 +539,18 @@ class BadgeService:
         return criteria.check(user, badge)
 
     @staticmethod
+    @transaction.atomic
     def _award_badge_xp(user, badge):
         """Distribute badge XP bonus evenly across user's active skills."""
-        active_progress = SkillProgress.objects.filter(
+        _lock_award_user(user)
+        active_progress = list(SkillProgress.objects.select_for_update().filter(
             user=user, unlocked=True, level__gt=0,
-        )
-        if not active_progress.exists():
+        ).order_by("pk"))
+        if not active_progress:
             return
-        xp_each = max(1, badge.xp_bonus // active_progress.count())
+        xp_each = max(1, badge.xp_bonus // len(active_progress))
         for sp in active_progress:
             sp.xp_points += xp_each
             sp.level = SkillService.level_for_xp(sp.xp_points)
-            sp.save()
+            sp.save(update_fields=["xp_points", "level"])
+        SkillService.evaluate_unlocks(user)

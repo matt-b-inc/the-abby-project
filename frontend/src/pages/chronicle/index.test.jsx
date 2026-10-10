@@ -33,6 +33,7 @@ describe('ChronicleHub', () => {
     const tablist = await screen.findByRole('tablist', { name: /chronicle sections/i });
     expect(tablist).toHaveTextContent(/sketchbook/i);
     expect(tablist).toHaveTextContent(/journal/i);
+    expect(tablist).toHaveTextContent(/grades/i);
     expect(tablist).toHaveTextContent(/yearbook/i);
   });
 
@@ -56,5 +57,14 @@ describe('ChronicleHub', () => {
     await screen.findByRole('tablist');
     const journalTab = screen.getByRole('tab', { name: /journal/i });
     expect(journalTab).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('honors the grades tab route and exposes child capture', async () => {
+    server.use(http.get('*/api/auth/me/', () => HttpResponse.json(buildUser())));
+    renderHub(['/chronicle?tab=grades']);
+    const tab = await screen.findByRole('tab', { name: 'Grades' });
+    expect(tab).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByRole('button', { name: 'Log a grade' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
   });
 });

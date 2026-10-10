@@ -48,6 +48,7 @@ describe('QuickActionsSheet', () => {
     // Study rows speak the tab's name with "homework" demoted to the hint,
     // matching the duty / ritual rows in the same sheet.
     expect(screen.getByText('Add study')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /log a grade/i })).toBeInTheDocument();
     expect(screen.getByText(/self-assign homework/i)).toBeInTheDocument();
     // With zero goals the hoard affordance labels as "Set a savings goal".
     await waitFor(() =>
@@ -142,6 +143,7 @@ describe('QuickActionsSheet', () => {
     expect(screen.getByText(/adjust payment/i)).toBeInTheDocument();
     // No child-only actions surface for parents.
     expect(screen.queryByText(/add study/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /log a grade/i })).not.toBeInTheDocument();
     // "Write in journal" is a child self-authoring affordance only.
     expect(screen.queryByText(/write in journal/i)).not.toBeInTheDocument();
   });
@@ -155,6 +157,20 @@ describe('QuickActionsSheet', () => {
     await waitFor(() =>
       expect(screen.getByText(/write in journal/i)).toBeInTheDocument(),
     );
+  });
+
+  it('opens grade capture above quick actions and keeps the draft when returning', async () => {
+    const u = userEvent.setup();
+    renderSheet(buildUser());
+    await u.click(await screen.findByRole('button', { name: /log a grade/i }));
+    const capture = await screen.findByRole('dialog', { name: 'Log a grade' });
+    await u.type(within(capture).getByRole('textbox', { name: /subject/i }), 'Biology');
+    await u.click(within(capture).getByRole('button', { name: 'Close', exact: true }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Log a grade' })).not.toBeInTheDocument());
+    expect(screen.getByRole('dialog', { name: 'Quick actions' })).toBeInTheDocument();
+    await u.click(screen.getByRole('button', { name: /log a grade/i }));
+    const restored = await screen.findByRole('dialog', { name: 'Log a grade' });
+    expect(within(restored).getByRole('textbox', { name: /subject/i })).toHaveValue('Biology');
   });
 
   it('opens the JournalEntryFormModal in create mode when no entry exists yet', async () => {

@@ -4,20 +4,22 @@
 (user, event_slug) where kind=first_ever for emit-once semantics.
 Other writers use get_or_create keyed on their natural identity.
 
-``write_journal`` / ``update_journal`` are the child-facing writers for the
-journal kind — not idempotent (multiple entries per day are fine), but the
-first-of-local-day call fires the RPG game loop for streak + XP credit.
+``write_journal`` accepts a stable client ID for interrupted mobile saves.
+The daily journal is created and rewarded once; exact retries return it.
 """
 from __future__ import annotations
 
 import logging
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
 from django.db import IntegrityError, transaction
+from django.contrib.auth import get_user_model
 from django.utils import timezone
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 
 from apps.chronicle.models import ChronicleEntry
 
@@ -42,6 +44,87 @@ class JournalAlreadyExistsError(Exception):
     def __init__(self, entry):
         super().__init__("A journal entry already exists for today.")
         self.entry = entry
+
+
+class JournalRequestConflictError(Exception):
+    """A client ID was reused with a different journal submission."""
+
+
+def _journal_request_fingerprint(title, summary, is_private):
+    payload = json.dumps(
+        [title.strip(), summary.strip(), bool(is_private)],
+        ensure_ascii=False, separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _journal_replay(user, client_entry_id, fingerprint):
+    if client_entry_id is None:
+        return None
+    entry = ChronicleEntry.objects.filter(
+        user=user, client_entry_id=client_entry_id,
+    ).first()
+    if entry is not None:
+        if entry.kind != ChronicleEntry.Kind.JOURNAL or entry.metadata.get("request_fingerprint") != fingerprint:
+            raise JournalRequestConflictError(
+                "This save ID was already used for a different entry."
+            )
+        entry._journal_replayed = True
+    return entry
+
+
+def _award_journal_xp(user, entry):
+    return award_verified_xp(
+        user, entry, tag_loader=_journal_xp_tags, pool=JOURNAL_XP_POOL,
+        source_label="Journal entry", evaluate_without_tags=True,
+    )
+
+
+def award_verified_xp(user, entry, *, tag_loader, pool, source_label, evaluate_without_tags=False, badge_scopes=None):
+    """Persist what the award transaction actually changed, including boosts.
+
+    A failed award rolls back to its savepoint while the memory survives.
+    Neither configured XP nor game-loop response dictionaries prove an award.
+    """
+    receipt = {
+        "receipt_id": f"{entry.kind}:{entry.pk}",
+        "status": "unavailable", "xp_awarded": 0, "skills": [],
+    }
+    try:
+        from apps.achievements.models import SkillProgress
+        from apps.achievements.services import AwardService, BadgeService
+
+        with transaction.atomic():
+            tags = tag_loader()
+            if not tags:
+                if evaluate_without_tags:
+                    BadgeService.evaluate_badges(user, scopes={"chronicle", "badges"})
+                return receipt
+            before = dict(
+                SkillProgress.objects.select_for_update().filter(user=user)
+                .values_list("skill_id", "xp_points")
+            )
+            AwardService.grant(
+                user, xp_tags=tags, xp=pool,
+                xp_source_label=source_label, badge_scopes=badge_scopes,
+            )
+            skills = []
+            for progress in SkillProgress.objects.filter(user=user).select_related("skill"):
+                delta = progress.xp_points - before.get(progress.skill_id, 0)
+                if delta > 0:
+                    skills.append({
+                        "skill_id": progress.skill_id,
+                        "name": progress.skill.name, "xp": delta,
+                    })
+            receipt.update(
+                status="awarded" if skills else "not_eligible",
+                xp_awarded=sum(skill["xp"] for skill in skills),
+                skills=sorted(skills, key=lambda skill: skill["skill_id"]),
+                awarded_at=timezone.now().isoformat(),
+            )
+    except Exception:
+        logger.exception("Chronicle XP award hook failed for user %s (%s)", user.pk, entry.kind)
+    return receipt
 
 
 JOURNAL_XP_POOL = 15
@@ -239,10 +322,12 @@ class ChronicleService:
         title: str,
         summary: str,
         occurred_on: Optional[date] = None,
+        client_entry_id=None,
+        is_private: bool = True,
     ) -> ChronicleEntry:
         """Create a child-authored journal entry for the given user.
 
-        Always sets ``kind=JOURNAL`` and ``is_private=True``. At most one
+        Always sets ``kind=JOURNAL``; entries are private by default. At most one
         journal entry per user per local day — a second call raises
         ``JournalAlreadyExistsError`` carrying the existing entry. Creation
         awards XP to Creative Writing + Vocabulary (hardcoded 10/5 split)
@@ -250,7 +335,16 @@ class ChronicleService:
         drop roll, and quest progress. The one-per-day constraint makes
         the anti-farm gate trivial: every create IS the day's only write.
         """
+        if not (title.strip() or summary.strip()):
+            raise ValidationError({"summary": "Add a thought or a title before saving."})
         day = occurred_on or timezone.localdate()
+        fingerprint = _journal_request_fingerprint(title, summary, is_private)
+        # Serialize competing daily journal writes on PostgreSQL, including
+        # reward eligibility. SQLite's unique constraints remain the backstop.
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        replay = _journal_replay(user, client_entry_id, fingerprint)
+        if replay is not None:
+            return replay
 
         # Service-layer pre-check — gives callers a clean exception with
         # the existing entry attached so the view can 409 with context.
@@ -266,66 +360,51 @@ class ChronicleService:
 
         resolved_title = _autofill_journal_title(title, summary, day)
         try:
-            entry = ChronicleEntry.objects.create(
-                user=user,
-                kind=ChronicleEntry.Kind.JOURNAL,
-                is_private=True,
-                occurred_on=day,
-                chapter_year=_chapter_year_for(day),
-                title=resolved_title,
-                summary=summary or "",
-            )
+            with transaction.atomic():
+                entry = ChronicleEntry.objects.create(
+                    user=user,
+                    kind=ChronicleEntry.Kind.JOURNAL,
+                    is_private=is_private,
+                    client_entry_id=client_entry_id,
+                    occurred_on=day,
+                    chapter_year=_chapter_year_for(day),
+                    title=resolved_title,
+                    summary=summary or "",
+                    metadata={"request_fingerprint": fingerprint},
+                )
         except IntegrityError:
             # Race condition: two POSTs landed between the pre-check and
             # create. Re-read and surface the winner as the "existing" row.
+            replay = _journal_replay(user, client_entry_id, fingerprint)
+            if replay is not None:
+                return replay
             existing = ChronicleEntry.objects.filter(
                 user=user,
                 kind=ChronicleEntry.Kind.JOURNAL,
                 occurred_on=day,
             ).first()
+            if existing is None:
+                raise
             raise JournalAlreadyExistsError(existing)
 
-        # Award paired XP + badge re-eval via the unified pipeline.
-        try:
-            from apps.achievements.services import AwardService
-
-            tags = _journal_xp_tags()
-            if tags:
-                AwardService.grant(
-                    user,
-                    xp_tags=tags,
-                    xp=JOURNAL_XP_POOL,
-                    xp_source_label="Journal entry",
-                )
-            else:
-                # No Language Arts skills seeded yet — still run badge
-                # evaluation so the entries_written / streak badges can
-                # fire on an unseeded test DB.
-                from apps.achievements.services import BadgeService
-
-                # Audit H8: chronicle events move chronicle ladders + meta.
-                BadgeService.evaluate_badges(
-                    user, scopes={"chronicle", "badges"},
-                )
-        except Exception:
-            # An award failure must not block the write — the entry is
-            # the canonical record; rewards are a bonus.
-            logger.exception("Journal XP award hook failed for user %s", user.pk)
+        entry.metadata["reward_receipt"] = _award_journal_xp(user, entry)
 
         # Note: kept inline (rather than ``safe_game_loop_call``) so journal
         # tests can patch ``apps.chronicle.services.GameLoopService`` —
         # see the import-hoist comment at the top of this module.
         try:
-            GameLoopService.on_task_completed(
-                user,
-                TriggerType.JOURNAL_ENTRY,
-                {"entry_id": entry.pk},
-            )
+            with transaction.atomic():
+                GameLoopService.on_task_completed(
+                    user,
+                    TriggerType.JOURNAL_ENTRY,
+                    {"entry_id": entry.pk},
+                )
         except Exception:
             # Same defensive stance — the write succeeded; streak/drops
             # are best-effort downstream effects.
             logger.exception("Journal game-loop hook failed for user %s", user.pk)
 
+        entry.save(update_fields=["metadata"])
         return entry
 
     @staticmethod
@@ -334,8 +413,9 @@ class ChronicleService:
         user,
         entry: ChronicleEntry,
         *,
-        title: str,
-        summary: str,
+        title: Optional[str] = None,
+        summary: Optional[str] = None,
+        is_private: Optional[bool] = None,
     ) -> ChronicleEntry:
         """Edit a journal entry owned by ``user`` on the same local day.
 
@@ -347,13 +427,25 @@ class ChronicleService:
             raise PermissionDenied("You can only edit your own journal entries.")
         if entry.kind != ChronicleEntry.Kind.JOURNAL:
             raise PermissionDenied("Only journal entries are editable here.")
-        if entry.occurred_on != timezone.localdate():
+        text_changed = title is not None or summary is not None
+        if text_changed and entry.occurred_on != timezone.localdate():
             raise PermissionDenied(
                 "Journal entries lock after the day ends — this one is part of the chronicle now."
             )
-        entry.title = _autofill_journal_title(title, summary, entry.occurred_on)
-        entry.summary = summary or ""
-        entry.save(update_fields=["title", "summary"])
+        fields = []
+        if text_changed:
+            next_title = entry.title if title is None else title
+            next_summary = entry.summary if summary is None else summary
+            if not (next_title.strip() or next_summary.strip()):
+                raise ValidationError({"summary": "Keep a thought or a title in your entry."})
+            entry.title = _autofill_journal_title(next_title, next_summary, entry.occurred_on)
+            entry.summary = next_summary
+            fields.extend(["title", "summary"])
+        if is_private is not None:
+            entry.is_private = is_private
+            fields.append("is_private")
+        if fields:
+            entry.save(update_fields=fields)
         return entry
 
     @staticmethod

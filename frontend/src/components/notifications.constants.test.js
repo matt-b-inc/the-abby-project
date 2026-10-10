@@ -21,7 +21,7 @@ const BACKEND_NOTIFICATION_TYPES = [
   'drop_received', 'pet_evolved', 'mount_bred', 'low_reward_stock',
   'reward_restocked', 'expedition_returned', 'print_request_submitted',
   'print_request_approved', 'print_request_rejected', 'print_started',
-  'print_finished', 'print_failed', 'print_budget_low',
+  'print_finished', 'print_failed', 'print_budget_low', 'journal_reply',
 ];
 
 describe('notification type meta', () => {
@@ -41,5 +41,10 @@ describe('notification type meta', () => {
   it('returns a route for badge_earned', () => {
     const meta = metaForNotification({ notification_type: 'badge_earned' });
     expect(meta.defaultRoute).toBe('/atlas?tab=badges');
+  });
+
+  it('returns to the journal for a family response', () => {
+    expect(metaForNotification({ notification_type: 'journal_reply' }).defaultRoute)
+      .toBe('/chronicle?tab=journal');
   });
 });

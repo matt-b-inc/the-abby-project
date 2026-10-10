@@ -1,5 +1,5 @@
 import { Suspense } from 'react';
-import { Outlet } from 'react-router-dom';
+import { useOutlet } from 'react-router-dom';
 import { ChapterSidebar, ChapterBottomBar } from './ChapterNav';
 import ParchmentSkeleton from '../ParchmentSkeleton';
 import QuickActionsFab from './QuickActionsFab';
@@ -30,6 +30,10 @@ import { useAuth } from '../../hooks/useApi';
  */
 export default function JournalShell() {
   const { user, logout, offline } = useAuth();
+  // Capture the matched element for each transition. A retained <Outlet>
+  // reads the live route context and would render the incoming page again
+  // inside the outgoing page's animation, duplicating its IDs and controls.
+  const outlet = useOutlet();
 
   return (
     <div className="flex min-h-dvh relative">
@@ -131,7 +135,7 @@ export default function JournalShell() {
             )}
           >
             <PageTurnTransition>
-              <Outlet />
+              {outlet}
             </PageTurnTransition>
           </Suspense>
         </div>

@@ -6,6 +6,7 @@ import ModalBackdrop from './modal/ModalBackdrop';
 import SealCloseButton from './modal/SealCloseButton';
 import SealPulseRing from './modal/SealPulseRing';
 import useVisualViewportInset from './modal/useVisualViewportInset';
+import { registerSheetHistory } from './modal/sheetHistory';
 import useIsDesktop from '../hooks/useIsDesktop';
 
 // Shared modal shell for every form dialog in the app. Dual-mode under the
@@ -72,23 +73,7 @@ export default function BottomSheet({ title, onClose, disabled, dirty, footer, c
   // navigates the route *underneath* the sheet, unmounting the form and
   // discarding a half-typed entry without ever reaching the dirty guard.
   // A sentinel history entry makes back close the sheet instead.
-  useEffect(() => {
-    window.history.pushState({ abbySheet: sheetHistoryId }, '');
-    const handlePop = () => {
-      // Re-arm immediately: safeClose may well leave the sheet up (dirty, or
-      // mid-save), so back must stay trapped for the next press.
-      window.history.pushState({ abbySheet: sheetHistoryId }, '');
-      safeCloseRef.current();
-    };
-    window.addEventListener('popstate', handlePop);
-    return () => {
-      window.removeEventListener('popstate', handlePop);
-      // Consume the sentinel only when it is still the current entry. If the
-      // sheet closed by navigating somewhere (QuickActionsSheet rows do this),
-      // popping here would undo that navigation.
-      if (window.history.state?.abbySheet === sheetHistoryId) window.history.back();
-    };
-  }, [sheetHistoryId]);
+  useEffect(() => registerSheetHistory(sheetHistoryId, () => safeCloseRef.current()), [sheetHistoryId]);
 
   useEffect(() => {
     // safeClose owns the disabled / dirty / guard rules — don't re-check here.

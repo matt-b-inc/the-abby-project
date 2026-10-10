@@ -404,6 +404,8 @@ export const handlers = [
   http.delete(/\/api\/sprites\/admin\/[^/]+\/$/, () => HttpResponse.json({ deleted: true })),
 
   // Chronicle / Yearbook
+  http.get('*/api/chronicle/grades/', () => HttpResponse.json({ count: 0, next: null, previous: null, results: [] })),
+  http.get(/\/api\/chronicle\/entries\/\d+\/comments\/$/, empty),
   http.get('*/api/chronicle/', () => HttpResponse.json([])),
   http.get('*/api/chronicle/summary/', () =>
     HttpResponse.json({ chapters: [], current_chapter_year: 2025 }),

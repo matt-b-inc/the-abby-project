@@ -1,20 +1,20 @@
 import { useState } from 'react'
-import { Lock } from 'lucide-react'
+import { Lock, Users } from 'lucide-react'
 import { KIND_ICON } from './yearbook.constants'
 import EntryDetailSheet from './EntryDetailSheet'
 import RuneBadge from '../../components/journal/RuneBadge'
 import { useRole } from '../../hooks/useRole'
 import { formatDate } from '../../utils/format'
+import { gradeResultText } from '../../components/chronicle/gradeDisplay'
 
 export default function TimelineEntry({ entry }) {
   const [open, setOpen] = useState(false)
+  const [savedEdit, setSavedEdit] = useState(null)
+  const currentEntry = savedEdit?.source === entry ? savedEdit.value : entry
   const { isParent } = useRole()
-  // Show the lock chip to parents only — Abby's own view of her private
-  // journal never renders the lock (it would feel surveillance-y).
-  const showLock =
-    entry.kind === 'journal' &&
-    entry.is_private &&
-    isParent
+  const isPersonalEntry = ['journal', 'grade'].includes(currentEntry.kind)
+  const isPrivate = isPersonalEntry && currentEntry.is_private !== false
+  if (isPrivate && isParent) return null
 
   return (
     <>
@@ -24,25 +24,26 @@ export default function TimelineEntry({ entry }) {
           onClick={() => setOpen(true)}
           className="flex w-full items-center gap-3 py-2 text-left hover:bg-ink-whisper/5"
         >
-          <span aria-hidden="true" className="text-lede">{KIND_ICON[entry.kind] ?? '•'}</span>
+          <span aria-hidden="true" className="text-lede">{KIND_ICON[currentEntry.kind] ?? '•'}</span>
           <span className="flex-1">
-            <span className="flex items-center gap-2 text-body">
-              <span>{entry.title}</span>
-              {showLock && (
+            <span className="flex flex-wrap items-center gap-2 text-body">
+              <span>{currentEntry.title}</span>
+              {isPersonalEntry && (
                 <RuneBadge
                   tone="ink"
                   size="sm"
-                  icon={<Lock size={10} aria-hidden="true" />}
+                  icon={isPrivate ? <Lock size={10} aria-hidden="true" /> : <Users size={10} aria-hidden="true" />}
                 >
-                  Private
+                  {isPrivate ? 'Only you' : 'Shared with family'}
                 </RuneBadge>
               )}
             </span>
-            <span className="block text-caption text-ink-whisper">{formatDate(entry.occurred_on)}</span>
+            {currentEntry.kind === 'grade' && <span className="block text-body">{gradeResultText(currentEntry)}</span>}
+            <span className="block text-caption text-ink-whisper">{formatDate(currentEntry.occurred_on)}</span>
           </span>
         </button>
       </li>
-      {open && <EntryDetailSheet entry={entry} onClose={() => setOpen(false)} />}
+      {open && <EntryDetailSheet entry={currentEntry} onClose={() => setOpen(false)} onUpdated={(saved) => { if (saved) setSavedEdit({ source: entry, value: saved }) }} />}
     </>
   )
 }

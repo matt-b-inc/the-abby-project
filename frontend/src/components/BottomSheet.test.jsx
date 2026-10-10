@@ -1,9 +1,43 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { StrictMode, useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import BottomSheet from './BottomSheet.jsx';
 
-afterEach(() => {
+let historyEntries;
+let historyIndex;
+
+beforeEach(() => {
+  historyEntries = [{ key: 'route', idx: 7 }];
+  historyIndex = 0;
+  vi.spyOn(window.history, 'state', 'get').mockImplementation(() => historyEntries[historyIndex]);
+  vi.spyOn(window.history, 'pushState').mockImplementation((state) => {
+    historyEntries.splice(historyIndex + 1);
+    historyEntries.push(state);
+    historyIndex += 1;
+  });
+  vi.spyOn(window.history, 'replaceState').mockImplementation((state) => {
+    historyEntries[historyIndex] = state;
+  });
+  // Real browser history.back() delivers popstate asynchronously. A sync
+  // dispatch misses the StrictMode cleanup → remount → old popstate bug.
+  vi.spyOn(window.history, 'back').mockImplementation(() => {
+    setTimeout(() => {
+      if (historyIndex === 0) return;
+      historyIndex -= 1;
+      window.dispatchEvent(new PopStateEvent('popstate', { state: historyEntries[historyIndex] }));
+    }, 0);
+  });
+});
+
+async function settleHistory() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+}
+
+afterEach(async () => {
+  await settleHistory();
   vi.restoreAllMocks();
 });
 
@@ -115,9 +149,9 @@ describe('BottomSheet', () => {
       );
 
       await act(async () => {
-        window.dispatchEvent(new PopStateEvent('popstate'));
+        window.history.back();
       });
-      expect(onClose).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
 
     it('keeps a dirty sheet open on back and re-arms the sentinel for the next press', async () => {
@@ -126,17 +160,19 @@ describe('BottomSheet', () => {
       const pushSpy = vi.spyOn(window.history, 'pushState');
 
       await act(async () => {
-        window.dispatchEvent(new PopStateEvent('popstate'));
+        window.history.back();
       });
 
       // Dirty sheets route through the discard guard rather than closing…
       expect(onClose).not.toHaveBeenCalled();
-      expect(screen.getByRole('alertdialog', { name: /discard changes/i })).toBeInTheDocument();
+      expect(await screen.findByRole('alertdialog', { name: /discard changes/i })).toBeInTheDocument();
       // …and back stays trapped for the next press.
       expect(pushSpy).toHaveBeenCalledWith(
         expect.objectContaining({ abbySheet: expect.anything() }),
         '',
       );
+      expect(historyIndex).toBe(1);
+      expect(pushSpy).toHaveBeenCalledTimes(2);
     });
 
     // Every other dismiss affordance checked `disabled`; the popstate handler
@@ -163,6 +199,81 @@ describe('BottomSheet', () => {
       })).resolves.not.toThrow();
 
       expect(screen.getByRole('dialog', { name: 'Title' })).toBeInTheDocument();
+    });
+  });
+
+  describe('history lifecycle', () => {
+    it('keeps a newly opened StrictMode sheet open and consumes one sentinel on real unmount', async () => {
+      const onClose = vi.fn();
+      const view = render(
+        <StrictMode>
+          <BottomSheet title="Write in your journal" onClose={onClose}><textarea aria-label="Journal text" /></BottomSheet>
+        </StrictMode>,
+      );
+      await settleHistory();
+      expect(screen.getByRole('dialog', { name: 'Write in your journal' })).toBeInTheDocument();
+      expect(onClose).not.toHaveBeenCalled();
+      expect(window.history.pushState).toHaveBeenCalledTimes(1);
+      expect(window.history.back).not.toHaveBeenCalled();
+      expect(window.history.state).toMatchObject({ key: 'route', idx: 7, abbySheet: expect.any(String) });
+      view.unmount();
+      await settleHistory();
+      expect(window.history.back).toHaveBeenCalledTimes(1);
+      expect(window.history.state).toEqual({ key: 'route', idx: 7 });
+    });
+
+    it('dismisses only the inner sheet on back and leaves its parent open after sentinel cleanup', async () => {
+      const parentClose = vi.fn();
+      const innerClose = vi.fn();
+      function NestedSheets() {
+        const [inner, setInner] = useState(false);
+        return (
+          <BottomSheet title="Parent memory" onClose={parentClose}>
+            <button onClick={() => setInner(true)}>Open sharing</button>
+            {inner && <BottomSheet title="Sharing" onClose={() => { innerClose(); setInner(false); }}>Who can read this?</BottomSheet>}
+          </BottomSheet>
+        );
+      }
+      const user = userEvent.setup();
+      render(<StrictMode><NestedSheets /></StrictMode>);
+      await user.click(screen.getByRole('button', { name: 'Open sharing' }));
+      expect(screen.getByRole('dialog', { name: 'Sharing' })).toBeInTheDocument();
+      await act(async () => { window.history.back(); });
+      await waitFor(() => expect(innerClose).toHaveBeenCalledTimes(1));
+      await settleHistory();
+      expect(parentClose).not.toHaveBeenCalled();
+      expect(screen.getByRole('dialog', { name: 'Parent memory' })).toBeInTheDocument();
+      expect(screen.queryByRole('dialog', { name: 'Sharing' })).toBeNull();
+      expect(historyIndex).toBe(1);
+    });
+
+    it('reuses a retiring sheet sentinel when replacing detail with its editor', async () => {
+      const editorClose = vi.fn();
+      function ReplaceSheet() {
+        const [editing, setEditing] = useState(false);
+        return editing
+          ? <BottomSheet key="editor" title="Edit entry" onClose={editorClose}>Your words</BottomSheet>
+          : <BottomSheet key="detail" title="Memory" onClose={() => {}}><button onClick={() => setEditing(true)}>Edit</button></BottomSheet>;
+      }
+      const user = userEvent.setup();
+      const view = render(<StrictMode><ReplaceSheet /></StrictMode>);
+      await user.click(within(screen.getByRole('dialog', { name: 'Memory' })).getByRole('button', { name: 'Edit' }));
+      await settleHistory();
+      expect(screen.getByRole('dialog', { name: 'Edit entry' })).toBeInTheDocument();
+      expect(editorClose).not.toHaveBeenCalled();
+      expect(historyIndex).toBe(1);
+      view.unmount();
+      await settleHistory();
+      expect(historyIndex).toBe(0);
+    });
+
+    it('does not undo a route navigation when its sheet unmounts', async () => {
+      const view = renderMobile();
+      window.history.pushState({ key: 'next-route', idx: 8 }, '', '/next');
+      view.unmount();
+      await settleHistory();
+      expect(window.history.back).not.toHaveBeenCalled();
+      expect(window.history.state).toEqual({ key: 'next-route', idx: 8 });
     });
   });
 

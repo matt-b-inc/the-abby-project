@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Lock, PenTool } from 'lucide-react';
+import { Lock, PenTool, Users } from 'lucide-react';
 import Button from '../../components/Button';
 import EmptyState from '../../components/EmptyState';
 import ErrorAlert from '../../components/ErrorAlert';
 import Loader from '../../components/Loader';
 import RuneBadge from '../../components/journal/RuneBadge';
+import JournalConversation from '../../components/chronicle/JournalConversation';
 import { SelectField } from '../../components/form';
 import TomeShelf from '../../components/atlas/TomeShelf';
 import { chapterMark, PROGRESS_TIER } from '../../components/atlas/mastery.constants';
@@ -46,7 +47,10 @@ export default function JournalReader() {
   // chapters === null means "haven't fetched yet" — distinct from "fetched
   // and got zero." Re-fetches keep the prior chapters visible until the new
   // ones arrive (no flash of loader).
-  const [chapters, setChapters] = useState(null);
+  const [loadedChapters, setLoadedChapters] = useState(null);
+  // A child switch must not briefly relabel another child's memories or
+  // leave their reply composer active while the next request is loading.
+  const chapters = loadedChapters && loadedChapters.userId === targetUserId ? loadedChapters.chapters : null;
   const [error, setError] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   // Per-(target child) override for the active chapter-year tome. Effective
@@ -100,7 +104,7 @@ export default function JournalReader() {
     getChronicleSummary(isParent ? targetUserId : undefined)
       .then((res) => {
         if (cancelled) return;
-        setChapters(res?.chapters ?? []);
+        setLoadedChapters({ userId: targetUserId, chapters: res?.chapters ?? [] });
         setError(null);
       })
       .catch((err) => {
@@ -123,13 +127,13 @@ export default function JournalReader() {
         label: c.label || `Chapter ${c.chapter_year}`,
         is_current: !!c.is_current,
         entries: (c.entries ?? [])
-          .filter((e) => e.kind === 'journal')
+          .filter((e) => e.kind === 'journal' && (!isParent || e.is_private === false))
           .sort((a, b) => (b.occurred_on || '').localeCompare(a.occurred_on || '')),
       }))
       .filter((c) => c.entries.length > 0)
       .sort((a, b) => a.chapter_year - b.chapter_year);
     return buckets;
-  }, [chapters]);
+  }, [chapters, isParent]);
 
   const activeChapterId = useMemo(() => {
     if (!journalChapters || !journalChapters.length || !targetUserId) return null;
@@ -299,7 +303,7 @@ function JournalBody({
         {/* Kid-agnostic surface — the parent may have picked any child, so
             the copy stays pronoun-neutral rather than assuming a daughter. */}
         <p>{isParent
-          ? "When they write their first journal entry, it'll appear here."
+          ? "When they share a journal entry with the family, it'll appear here."
           : "Write your first entry above. One per day, in your own words."}</p>
       </EmptyState>
     );
@@ -318,7 +322,7 @@ function JournalBody({
         <section aria-label={activeChapter.label}>
           <ul className="space-y-4">
             {activeChapter.entries.map((entry) => (
-              <JournalEntryCard key={entry.id} entry={entry} isParent={isParent} />
+              <JournalEntryCard key={entry.id} entry={entry} />
             ))}
           </ul>
         </section>
@@ -327,11 +331,8 @@ function JournalBody({
   );
 }
 
-function JournalEntryCard({ entry, isParent }) {
-  // Lock chip shows on parent's view of private journal entries — never on
-  // the child's own view (would feel surveillance-y). Same rule as
-  // TimelineEntry.
-  const showLock = entry.is_private && isParent;
+function JournalEntryCard({ entry }) {
+  const isPrivate = entry.is_private !== false;
   const dateLabel = useMemo(() => formatDate(entry.occurred_on), [entry.occurred_on]);
   return (
     <li>
@@ -339,7 +340,7 @@ function JournalEntryCard({ entry, isParent }) {
         className="parchment-card p-4 space-y-2"
         aria-labelledby={`journal-entry-${entry.id}-title`}
       >
-        <header className="flex items-baseline justify-between gap-2">
+        <header className="flex flex-wrap items-baseline justify-between gap-2">
           <div>
             <div className="font-script text-tiny text-ink-whisper uppercase tracking-wider">
               {dateLabel}
@@ -351,17 +352,16 @@ function JournalEntryCard({ entry, isParent }) {
               {entry.title || 'Untitled entry'}
             </h3>
           </div>
-          {showLock && (
-            <RuneBadge tone="ink" size="sm" icon={<Lock size={10} aria-hidden="true" />}>
-              Private
-            </RuneBadge>
-          )}
+          <RuneBadge tone="ink" size="sm" icon={isPrivate ? <Lock size={10} aria-hidden="true" /> : <Users size={10} aria-hidden="true" />}>
+            {isPrivate ? 'Only you' : 'Shared with family'}
+          </RuneBadge>
         </header>
         {entry.summary && (
           <p className="text-body whitespace-pre-wrap leading-relaxed text-ink-primary">
             {entry.summary}
           </p>
         )}
+        <JournalConversation entry={entry} />
       </article>
     </li>
   );

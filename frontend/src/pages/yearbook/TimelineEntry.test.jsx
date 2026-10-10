@@ -7,6 +7,14 @@ import { server } from '../../test/server'
 import { buildUser, buildParent } from '../../test/factories'
 import TimelineEntry from './TimelineEntry'
 
+vi.mock('../grades/GradeEntryFormModal', () => ({
+  default: function GradeFormStub({ entry, onSaved }) {
+    return <div role="dialog" aria-label="Correct grade">
+      <button onClick={() => onSaved({ ...entry, metadata: { grade: { ...entry.metadata.grade, score: '9' } } })}>Confirm grade correction</button>
+    </div>
+  },
+}))
+
 // Stub AnimatePresence so the EntryDetailSheet portal mounts synchronously.
 vi.mock('framer-motion', async () => {
   const actual = await vi.importActual('framer-motion')
@@ -70,7 +78,7 @@ describe('TimelineEntry', () => {
     expect(screen.getByText('🪶')).toBeInTheDocument()
   })
 
-  it("shows the 'Private' lock chip on the parent's timeline view", async () => {
+  it("omits a private journal from the parent's timeline", async () => {
     mountAsUser(
       {
         id: 3, kind: 'journal', is_private: true, title: 'Private thought',
@@ -78,10 +86,10 @@ describe('TimelineEntry', () => {
       },
       buildParent(),
     )
-    await waitFor(() => expect(screen.getByText(/^Private$/i)).toBeInTheDocument())
+    await waitFor(() => expect(screen.queryByText('Private thought')).toBeNull())
   })
 
-  it("never renders the lock chip on the child's own view", async () => {
+  it("shows the child that a journal is only visible to them", async () => {
     mountAsUser(
       {
         id: 4, kind: 'journal', is_private: true, title: 'My journal',
@@ -91,6 +99,37 @@ describe('TimelineEntry', () => {
     )
     // Wait for AuthProvider to settle /auth/me/ before asserting absence.
     await waitFor(() => expect(screen.getByText('My journal')).toBeInTheDocument())
-    expect(screen.queryByText(/^Private$/i)).not.toBeInTheDocument()
+    expect(screen.getByText('Only you')).toBeInTheDocument()
+  })
+
+  it('identifies a shared journal for family readers', async () => {
+    mountAsUser(
+      { id: 6, kind: 'journal', is_private: false, title: 'Our afternoon', occurred_on: '2026-04-21', user: 1 },
+      buildParent(),
+    )
+    expect(await screen.findByText('Shared with family')).toBeInTheDocument()
+  })
+
+  it('shows the grade icon and updates a corrected native result immediately in the timeline', async () => {
+    const view = mountAsUser(
+      { id: 31, kind: 'grade', user: 1, is_private: true, title: 'Math quiz', occurred_on: '2025-02-03', metadata: { grade: { subject: 'Math', assessment: 'Fractions quiz', grade_format: 'points', score: '8', possible: '10' } } },
+      buildUser(),
+    )
+    expect(screen.getByText('📚')).toBeInTheDocument()
+    await view.user.click(screen.getByRole('button', { name: /Math quiz/ }))
+    await view.user.click(await screen.findByRole('button', { name: 'Correct grade or sharing' }))
+    await view.user.click(screen.getByRole('button', { name: 'Confirm grade correction' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(screen.getByText('9 / 10 points')).toBeInTheDocument()
+    expect(screen.queryByText('8 / 10 points')).toBeNull()
+  })
+
+  it('omits a private grade from the parent timeline', async () => {
+    mountAsUser(
+      { id: 34, kind: 'grade', user: 1, is_private: true, title: 'Private result', occurred_on: '2025-02-03', metadata: { grade: { grade_format: 'percentage', score: '50' } } },
+      buildParent(),
+    )
+    await waitFor(() => expect(screen.queryByText('Private result')).toBeNull())
+    expect(screen.queryByText('50%')).toBeNull()
   })
 })

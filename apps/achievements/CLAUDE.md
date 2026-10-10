@@ -14,6 +14,60 @@ Skill tree (Category → Subject → Skill → Badge), the unified `AwardService
 - `BadgeService` — badge evaluation across all criterion types.
 - `AwardService.grant(user, *, xp, coins, coin_reason, money, money_entry_type, xp_tags, xp_source_label, badge_scopes, …)` — **unified distribution helper**. Paired XP + coin + optional money ledger entry. Single entry point for all award flows. Applies `xp_boost_multiplier(user)` from `apps/rpg/services` before distributing XP (boosted total flows through tag-weighted splits; original base preserved in activity extras). Inner `CoinService`/`PaymentService` calls are wrapped in `activity_scope(suppress_inner_ledger=True)` to avoid double-logging. `badge_scopes` limits badge evaluation to the relevant criterion families for performance (see Badge Scopes below).
 
+## XP transactions and lock order
+
+Every skill-progress or badge-evaluation mutation entry point opens an atomic
+transaction and locks the award user's row before reading or locking
+`SkillProgress` or creating a `UserBadge`. This covers direct XP, both tagged distribution paths, unlock
+evaluation, badge evaluation, and badge XP bonuses. An outer transaction keeps
+the locks until its own commit. Receipt services must acquire the user lock
+before their before/after progress snapshots; taking progress locks first and
+then calling achievements reverses the order and can deadlock.
+
+The user gate uses `select_for_update(no_key=True)` on PostgreSQL. It serializes
+awards even when a progress row does not exist, while remaining compatible with
+foreign-key `KEY SHARE` locks from activity inserts before an award. Progress
+rows are then selected for update. XP saves only `xp_points` and the level
+derived from that total; unlock evaluation saves only `unlocked`. Tagged awards
+roll back together. Badge eligibility, the earned marker, XP, coins, and the
+badge activity record share a transaction so a failed payout remains retryable.
+Badge XP keeps the existing active-skill eligibility (`unlocked`, `level > 0`),
+floor division and minimum-one award, then evaluates prerequisite unlocks.
+
+`tests/test_xp_transactions.py` checks rollback, retry, division, levels, and
+unlocks. `tests/test_xp_concurrency.py` requires PostgreSQL and uses independent
+connections plus controlled overlapping saves to catch lost awards, duplicate
+first progress creation, duplicate badge payouts, FK lock upgrades, and receipt
+lock-order inversions. SQLite skips the concurrency tests because its
+`select_for_update` does not provide row serialization. Run them with
+`python manage.py test --settings=config.settings_test apps.achievements` and an
+explicit `DATABASE_URL` for a disposable test instance. Keep background task
+execution isolated from the database test transactions.
+
+Audit boundary: `ConsumableService`'s `skill_tonic` in `apps/rpg/services.py` still
+increments progress directly, and Django admin permits direct progress edits.
+These do not participate in the achievements user gate. Raw ORM updates likewise
+need their own coordination. Outer services must also maintain lock order across
+their other rows: Chronicle retains user/progress locks while its game loop can
+lock a character profile or quest participant, while consumables lock the profile
+before progress and independent quest completion locks the participant before
+calling awards. Those cross-service orders need a coordinated change outside
+achievements; the achievements gate alone does not establish global deadlock
+freedom.
+
+Validation on 2026-10-09 used a disposable localhost PostgreSQL 16.1 cluster
+and an external Django 5.1.15 environment, without loading `.env` or existing
+databases. All 244 selected tests passed (achievements plus habit, journal,
+journal receipt, homework, boost, and consumable service coverage). The same
+SQLite run passed with the four PostgreSQL concurrency tests skipped. The
+newly added grade integration suite also passed all 38 tests on SQLite;
+`GradeService` uses the same user-before-progress order and `no_key=True` gate.
+The temporary runner disconnected only the project's two Celery connection-recycling
+hooks, which otherwise close PostgreSQL `TestCase` connections during eager
+tasks. Running the new regressions against the original services reproduced
+lost awards (260 or 270 XP instead of 330), partial rollback, and stale unlock
+saves overwriting XP.
+
 ## Gotchas
 
 - **Skill tree hierarchy:** `SkillCategory → Subject → Skill → Badge`. Subjects group related Skills inside a Category (SkillTree-platform model). `Skill.subject` is nullable; a data migration backfills one "General" Subject per Category. `SkillTreeView` response includes both nested `subjects` (new) and flat `skills` (legacy) for backward compatibility. `SkillPrerequisite` allows cross-category and cross-subject requirements. **Taxonomy (14 categories, life-RPG horizon):** maker/STEM side (Electronics, Coding, Making & Fabrication, Woodworking, Science, Math), domestic side (Cooking, Sewing & Textiles, Outdoors), creative side (Art & Crafts, Music, Language Arts), plus the two "whole-life" categories (Life Skills — budgeting/planning/presentation/persistence/communication/time-management/technical-writing/driving; Physical — endurance/strength/flexibility/cycling/swimming/team-sports). Math + Language Arts were added in the 2026 expansion; their `category_mastery` badges landed in the 2026-04-23 review (G2). Driving + Team Sports are `locked: true` behind age/skill prerequisites. The 2026-04-21 review retired two legacy duplicate categories (`Electronics & Circuits`, `STEM Fundamentals`) via the one-shot `cleanup_rpg_catalog` management command — the loader itself is upsert-only and can't delete.

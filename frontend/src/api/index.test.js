@@ -81,6 +81,50 @@ describe('auth endpoints', () => {
   });
 });
 
+describe('grade memories', () => {
+  it('requests a selected child and subsequent history page from the grade endpoint', async () => {
+    await api.getGrades({ user_id: 23, page: 2, search: 'Art & design', unused: undefined });
+    expect(lastCall().url).toMatch(/\/api\/chronicle\/grades\/\?user_id=23&page=2&search=Art%20%26%20design$/);
+    expect(lastCall().method).toBe('GET');
+  });
+
+  it('preserves exact marking values and retry identity on capture', async () => {
+    const payload = {
+      subject: 'Math', assessment: 'Fractions quiz', grade_format: 'points',
+      score: '0', possible: '20', reflection: 'I know what to practice next.',
+      occurred_on: '2026-10-09', is_private: true,
+      client_entry_id: '03b7faae-51b7-47c9-a6cb-56caa9460081',
+    };
+    await api.writeGrade(payload);
+    expect(lastCall().url).toMatch(/\/api\/chronicle\/grades\/$/);
+    expect(lastCall().method).toBe('POST');
+    expect(JSON.parse(lastCall().body)).toEqual(payload);
+  });
+
+  it('sends sharing-only corrections without adding grade fields', async () => {
+    await api.updateGradeEntry(23, { is_private: false });
+    expect(lastCall().url).toMatch(/\/api\/chronicle\/23\/grade\/$/);
+    expect(lastCall().method).toBe('PATCH');
+    expect(JSON.parse(lastCall().body)).toEqual({ is_private: false });
+  });
+});
+
+describe('journal family responses', () => {
+  it('reads responses attached to one memory', async () => {
+    await api.getChronicleComments(23);
+    expect(lastCall().url).toMatch(/\/api\/chronicle\/entries\/23\/comments\/$/);
+    expect(lastCall().method).toBe('GET');
+  });
+
+  it('posts the response and its retry identity to the same memory', async () => {
+    const payload = { body: 'Tell me more!', client_comment_id: '03b7faae-51b7-47c9-a6cb-56caa9460081' };
+    await api.addChronicleComment(23, payload);
+    expect(lastCall().url).toMatch(/\/api\/chronicle\/entries\/23\/comments\/$/);
+    expect(lastCall().method).toBe('POST');
+    expect(JSON.parse(lastCall().body)).toEqual(payload);
+  });
+});
+
 const CASES = [
   // [fn name, args, expected URL regex, expected method, optional body]
   ['getDashboard', [], /\/api\/dashboard\/$/, 'GET'],

@@ -64,7 +64,7 @@ describe('JournalReader — child view', () => {
     expect(titles.indexOf('Today')).toBeLessThan(titles.indexOf('Earlier'));
   });
 
-  it('child view does NOT show the lock chip on private entries', async () => {
+  it('identifies a private journal as Only you', async () => {
     server.use(
       http.get('*/api/auth/me/', () => HttpResponse.json(buildUser())),
       http.get('*/api/chronicle/summary/', () =>
@@ -77,7 +77,32 @@ describe('JournalReader — child view', () => {
     renderReader();
 
     await waitFor(() => expect(screen.getByText('Mine')).toBeInTheDocument());
-    expect(screen.queryByText(/private/i)).toBeNull();
+    expect(screen.getByText('Only you')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /family responses/i })).toBeNull();
+  });
+
+  it('lets the child read and respond to family encouragement on a shared entry', async () => {
+    server.use(
+      http.get('*/api/auth/me/', () => HttpResponse.json(buildUser())),
+      http.get('*/api/chronicle/summary/', () => HttpResponse.json(summaryPayload([
+        { id: 23, user: 1, kind: 'journal', occurred_on: '2026-04-10', title: 'My afternoon', summary: 'I made something.', is_private: false },
+      ]))),
+      http.get('*/api/chronicle/entries/23/comments/', () => HttpResponse.json([
+        { id: 5, author: 99, author_name: 'Dad', body: 'What did you make?', created_at: '2026-04-10T16:00:00Z' },
+      ])),
+      http.post('*/api/chronicle/entries/23/comments/', async ({ request }) => {
+        const payload = await request.json();
+        return HttpResponse.json({ id: 6, author: 1, author_name: 'Abby', body: payload.body, created_at: '2026-04-10T17:00:00Z' }, { status: 201 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderReader();
+    await user.click(await screen.findByRole('button', { name: 'Family responses' }));
+    expect(await screen.findByText('What did you make?')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Your family response' }), 'A birthday card!');
+    await user.click(screen.getByRole('button', { name: 'Send response' }));
+    expect(await screen.findByText('A birthday card!')).toBeInTheDocument();
+    expect(screen.getByText('Abby (you)')).toBeInTheDocument();
   });
 
   it('renders a chapter-year shelf when entries span multiple chapters', async () => {
@@ -165,7 +190,8 @@ describe('JournalReader — child view', () => {
     await user.click(within(dialog).getByRole('button', { name: /save entry/i }));
 
     await waitFor(() => expect(create.calls).toHaveLength(1));
-    expect(create.calls[0].body).toEqual({ title: 'Hello', summary: 'world' });
+    expect(create.calls[0].body).toMatchObject({ title: 'Hello', summary: 'world', is_private: true });
+    expect(create.calls[0].body.client_entry_id).toMatch(/^[0-9a-f-]{36}$/);
     expect(create.calls[0].url).toMatch(/\/chronicle\/journal\/$/);
   });
 
@@ -196,7 +222,7 @@ describe('JournalReader — parent view', () => {
       ),
       http.get('*/api/chronicle/summary/', () =>
         HttpResponse.json(summaryPayload([
-          { id: 1, kind: 'journal', occurred_on: '2026-04-10', title: 'Hers', summary: 'secret words', is_private: true },
+          { id: 1, user: 7, kind: 'journal', occurred_on: '2026-04-10', title: 'Hers', summary: 'shared words', is_private: false },
         ])),
       ),
     );
@@ -207,8 +233,50 @@ describe('JournalReader — parent view', () => {
     expect(screen.getByLabelText(/reading/i)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /write today’s entry/i })).toBeNull();
     expect(screen.queryByRole('button', { name: /edit today’s entry/i })).toBeNull();
-    // Lock chip IS visible to the parent on the child's private entry.
-    expect(screen.getByText(/private/i)).toBeInTheDocument();
+    expect(screen.getByText('Shared with family')).toBeInTheDocument();
+  });
+
+  it('omits private journals even if an old summary includes one', async () => {
+    server.use(
+      http.get('*/api/auth/me/', () => HttpResponse.json(buildParent())),
+      http.get('*/api/children/', () => HttpResponse.json([{ id: 7, first_name: 'Abby' }])),
+      http.get('*/api/chronicle/summary/', () => HttpResponse.json(summaryPayload([
+        { id: 1, user: 7, kind: 'journal', title: 'Only mine', summary: 'Private words', is_private: true },
+      ]))),
+    );
+    renderReader();
+    await screen.findByText('No entries yet');
+    expect(screen.queryByText('Private words')).toBeNull();
+    expect(screen.queryByRole('button', { name: /family responses/i })).toBeNull();
+  });
+
+  it('unmounts the previous child conversation immediately when changing the reader', async () => {
+    let finishSecond;
+    const secondReady = new Promise((resolve) => { finishSecond = resolve; });
+    server.use(
+      http.get('*/api/auth/me/', () => HttpResponse.json(buildParent())),
+      http.get('*/api/children/', () => HttpResponse.json([{ id: 7, first_name: 'Abby' }, { id: 8, first_name: 'Max' }])),
+      http.get('*/api/chronicle/summary/', async ({ request }) => {
+        const child = new URL(request.url).searchParams.get('user_id');
+        if (child === '8') {
+          await secondReady;
+          return HttpResponse.json(summaryPayload([]));
+        }
+        return HttpResponse.json(summaryPayload([
+          { id: 23, user: 7, kind: 'journal', title: 'Abby shared', summary: 'Her afternoon', is_private: false },
+        ]));
+      }),
+      http.get('*/api/chronicle/entries/23/comments/', () => HttpResponse.json([])),
+    );
+    const user = userEvent.setup();
+    renderReader();
+    await user.click(await screen.findByRole('button', { name: 'Family responses' }));
+    await screen.findByRole('textbox', { name: 'Your family response' });
+    await user.selectOptions(screen.getByLabelText('Reading'), '8');
+    expect(screen.queryByText('Abby shared')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Your family response' })).toBeNull();
+    finishSecond();
+    await screen.findByText('No entries yet');
   });
 
   // The parent may have picked any child, so the empty state can't assume a
@@ -225,7 +293,7 @@ describe('JournalReader — parent view', () => {
     renderReader();
 
     await waitFor(() =>
-      expect(screen.getByText(/when they write their first journal entry/i)).toBeInTheDocument(),
+      expect(screen.getByText(/when they share a journal entry with the family/i)).toBeInTheDocument(),
     );
     expect(screen.queryByText(/when she writes her first/i)).toBeNull();
   });

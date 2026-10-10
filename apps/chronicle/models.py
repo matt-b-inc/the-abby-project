@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.db.models import Index, Q, UniqueConstraint
 
-from config.base_models import CreatedAtModel
+from config.base_models import CreatedAtModel, DailyCounterModel
 
 
 class ChronicleEntry(CreatedAtModel):
@@ -16,6 +16,7 @@ class ChronicleEntry(CreatedAtModel):
         MANUAL        = "manual", "Manual"
         JOURNAL       = "journal", "Journal"
         CREATION      = "creation", "Creation"
+        GRADE         = "grade", "Grade"
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -34,13 +35,13 @@ class ChronicleEntry(CreatedAtModel):
     related_object_type = models.CharField(max_length=40, blank=True)
     related_object_id = models.PositiveIntegerField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
+    client_entry_id = models.UUIDField(null=True, blank=True, editable=False)
     viewed_at = models.DateTimeField(null=True, blank=True)
     is_private = models.BooleanField(
         default=False,
         help_text=(
-            "True for child-authored journal entries — a privacy marker "
-            "surfaces in the Yearbook UI. Does not gate read access: parents "
-            "can still see the entry (the lock chip just makes privacy visible)."
+            "Private journal and grade entries are readable only by their author. "
+            "The author can explicitly share an entry with family."
         ),
     )
 
@@ -52,6 +53,10 @@ class ChronicleEntry(CreatedAtModel):
             Index(fields=["user", "viewed_at"]),
         ]
         constraints = [
+            UniqueConstraint(
+                fields=["user", "client_entry_id"],
+                name="unique_chronicle_client_entry_per_user",
+            ),
             UniqueConstraint(
                 fields=["user", "event_slug"],
                 condition=Q(kind="first_ever"),
@@ -70,3 +75,13 @@ class ChronicleEntry(CreatedAtModel):
 
     def __str__(self) -> str:  # pragma: no cover — string form
         return f"{self.user_id}·{self.kind}·{self.title}"
+
+
+class GradeDailyCounter(DailyCounterModel):
+    """Count grade captures by save date; corrections cannot reset eligibility."""
+
+    class Meta(DailyCounterModel.Meta):
+        pass
+
+
+from .comment_models import ChronicleComment  # noqa: E402,F401

@@ -2,7 +2,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 
 /**
- * PageTurnTransition — wraps an <Outlet> or page content in a soft cross-fade
+ * PageTurnTransition — wraps a captured route element or page content in a soft cross-fade
  * when the route changes.
  *
  * Design notes:
@@ -13,6 +13,8 @@ import { useLocation } from 'react-router-dom';
  *  - Opacity + a 4px lift only — no rotateY, no conflicting directions.
  *  - `initial={false}` on AnimatePresence suppresses the first-mount animation.
  *  - `prefers-reduced-motion` → render children directly, no motion.
+ *  - Route callers pass useOutlet()'s element, rather than a live <Outlet>,
+ *    so outgoing content keeps its own page while the new route enters.
  */
 export default function PageTurnTransition({ children }) {
   const location = useLocation();

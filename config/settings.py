@@ -780,13 +780,12 @@ if SENTRY_DSN:
     )
 
 # ──────────────────────────────────────────────────────────────────────────
-# Testing — skip migrations and use syncdb for test databases.
+# Testing — use syncdb for fast model/API test databases.
 #
-# The AUTH_USER_MODEL move from projects.User → accounts.User left the
-# migration graph with unresolvable settings.AUTH_USER_MODEL FK references
-# on fresh databases. Production is unaffected (migrations were applied
-# sequentially). For test databases, bypass the migration graph entirely
-# and create tables from current model state.
+# Fresh installs are repaired by projects.0001_initial_with_accounts_bootstrap.
+# The focused accounts migration regressions run the real graph in isolated
+# processes, without this shortcut, and verify existing migration records.
+# Keep ordinary model/API tests using current state for faster setup.
 # ──────────────────────────────────────────────────────────────────────────
 if "test" in sys.argv:
     MIGRATION_MODULES = {app.split(".")[-1]: None for app in INSTALLED_APPS}

@@ -43,6 +43,7 @@ class NotificationType(models.TextChoices):
     SAVINGS_GOAL_COMPLETED = "savings_goal_completed", "Savings Goal Completed"
     BIRTHDAY             = "birthday",             "Birthday"
     CHRONICLE_FIRST_EVER = "chronicle_first_ever", "Chronicle — first ever"
+    JOURNAL_REPLY       = "journal_reply",        "Journal Reply"
     COMEBACK_SUGGESTED   = "comeback_suggested",   "Comeback Quest Suggested"
     CREATION_SUBMITTED   = "creation_submitted",   "Creation Submitted"
     CREATION_APPROVED    = "creation_approved",    "Creation Approved"
