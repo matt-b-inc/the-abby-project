@@ -38,7 +38,8 @@ function dictationHint(code) {
  * Props:
  *   mode      — "create" (default) or "edit"
  *   entry     — required when mode="edit"; prefills title + summary
- *   onSaved   — (entry) => void, called when the saved confirmation closes
+ *   onSaved   — (entry, { mode }) => void, when saved confirmation closes;
+ *               mode reflects any create → edit recovery after a 409
  *   onClose   — () => void
  *
  * Dictation uses the browser Web Speech API via useSpeechDictation. When the
@@ -98,6 +99,8 @@ function JournalEntryForm({
   userId,
   onSaved,
   onClose,
+  surfaceClassName,
+  surfaceStyle,
 }) {
   const [form, setForm] = useState(() => initialForm(userId, initialMode, initialEntry));
   const formRef = useRef(form);
@@ -227,7 +230,7 @@ function JournalEntryForm({
       : 'Dictate';
 
   const finish = () => {
-    onSaved?.(savedEntry);
+    onSaved?.(savedEntry, { mode });
     onClose?.();
   };
 
@@ -236,7 +239,7 @@ function JournalEntryForm({
     const awarded = mode === 'create' && receipt?.status === 'awarded'
       && Number.isFinite(receipt.xp_awarded) && receipt.xp_awarded > 0;
     return (
-      <BottomSheet title={mode === 'create' ? 'Memory saved' : 'Entry updated'} onClose={finish}>
+      <BottomSheet title={mode === 'create' ? 'Memory saved' : 'Entry updated'} onClose={finish} surfaceClassName={surfaceClassName} surfaceStyle={surfaceStyle}>
         <div className="space-y-4 text-center">
           <div className="flex justify-center text-sheikah-teal-deep" aria-hidden="true">
             {awarded ? <PawPrint size={48} className="animate-rune-pulse" /> : <Check size={48} />}
@@ -266,7 +269,7 @@ function JournalEntryForm({
   }
 
   return (
-    <BottomSheet title={modalTitle} onClose={onClose} disabled={saving} dirty={dirty}>
+    <BottomSheet title={modalTitle} onClose={onClose} disabled={saving} dirty={dirty} surfaceClassName={surfaceClassName} surfaceStyle={surfaceStyle}>
       <form onSubmit={submit} className="space-y-4">
         {isLocked && (
           <p className="font-script text-xs px-3 py-2 rounded-lg border border-gold-leaf/40 bg-gold-leaf/10 text-ink-secondary flex items-start gap-2">

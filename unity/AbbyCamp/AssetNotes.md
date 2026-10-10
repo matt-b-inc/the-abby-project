@@ -2,7 +2,21 @@
 
 This selection makes the first scene usable without drawing characters, modeling pets, or authoring movement animations. Keep original source assets under `Assets/ThirdParty`; presentation definitions and generated project materials belong elsewhere. Gameplay identities and saved progression should refer to the project's content IDs, never a Kenney filename.
 
-## Selected models
+## Shared meadow presentation
+
+The first meadow slice uses the same temporary dragon expressions, memory-bloom icon, palette and Nunito font as React. Canonical sources are under `shared/storybook`; `scripts/storybook/sync_presentation.py` copies runtime exports into both clients. Temporary dragon and bloom SVGs are project-authored illustrations, with PNG exports, rather than licensed store previews or a substitute for the final purchased models.
+
+Nunito comes from the official Google Fonts repository (`google/fonts`, `ofl/nunito`). The static runtime font is an instance of the variable font at weight 600, with the OFL license also embedded in its metadata. The original variable font and copyright/license text remain in `shared/storybook/fonts`.
+
+The authored presentation and dragon definition live under `Assets/AbbyCamp/Presentation`, outside generated Kenney defaults. A model takes precedence over a portrait. Model controllers map speed and celebration intents; portrait definitions can provide idle, happy and blink sprites with camera-facing rendering and local reactions. Both preserve the gameplay root, collider, following behavior and content identity. Rebuilds validate these references and the canonical palette instead of replacing authored art.
+
+Meshtint's Cute Series is the current ready-made candidate for companions, growth forms, scenery and matching web portraits. No paid Meshtint or 3DDisco assets are included in this slice. Purchased source models, textures and packages must stay out of the public source repository; importing one requires a separate local source folder and a retained applicable license. Do not assume humanoid accessories fit a dragon or that recolors supply evolved body forms.
+
+Start with the [Spark / Fire / Inferno evolution pack](https://www.meshtint.com/products/dragon-fire-inferno-evolution-pack-cute-series) and its [matching portrait icons](https://www.meshtint.com/products/icons-for-monsters-ultimate-pack-02-cute-series). These provide three distinct dragon forms and web portraits without custom drawing. The Fire stage advertises flying locomotion, so each form needs its own animation mapping. No common skeleton, fitted dragon wardrobe, or further evolution forms are promised. Simple attached accessories can be fitted per stage; deforming clothing requires additional modeling/rigging work.
+
+Later scenery can come from [Forest Ruins](https://www.meshtint.com/products/forest-ruins-pack-cute-series), and a player avatar from the [modular Female Archer](https://www.meshtint.com/products/female-archer-modular-pack-01-cute-series), within the same Cute Series. Meshtint's Toon and Polygonal lines have different styles. Check materials in this project's URP configuration and test the actual models on Android before expanding the library. The publisher's [direct-store license](https://www.meshtint.com/pages/terms-of-use-license) allows modifications and app/website use but restricts distributing the source assets. Use licensed embedded exports for the app; keep paid raw sources in private storage.
+
+## Original harness models
 
 Paths below are relative to `Assets/ThirdParty/Kenney`.
 

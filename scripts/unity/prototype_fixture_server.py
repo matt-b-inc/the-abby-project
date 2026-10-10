@@ -140,6 +140,11 @@ def seed_fixture() -> dict:
     )
     category = SkillCategory.objects.create(name="Prototype Life Skills")
     skill = Skill.objects.create(name="Reading", category=category)
+    # The shared journal/meadow preview exercises actual journal XP receipts,
+    # which resolve these same writing skills in the production catalog.
+    language_arts = SkillCategory.objects.create(name="Language Arts")
+    Skill.objects.create(name="Creative Writing", category=language_arts)
+    Skill.objects.create(name="Vocabulary", category=language_arts)
     HabitSkillTag.objects.create(habit=available, skill=skill, xp_weight=1)
     SkillProgress.objects.create(user=child, skill=skill, xp_points=95, level=0)
     return {
@@ -270,10 +275,22 @@ def check_fixture(fixture: dict, *, fail_first_log: bool = False) -> None:
     rows = collect_rows("/api/habits/")
     available = next(row for row in rows if row["id"] == fixture["habits"]["available"])
     assert available["taps_today"] == 1 and available["strength"] == 1
+    memory = {"summary": "Synthetic private preview memory.", "client_entry_id": "40f149c3-83ca-428d-a48f-5dca68bf90b9"}
+    saved = client.post("/api/chronicle/journal/", memory, format="json")
+    assert saved.status_code == 201, saved.content
+    assert saved.data["is_private"] is True
+    assert saved.data["reward_receipt"]["xp_awarded"] == 15, saved.content
+    meadow = client.get("/api/chronicle/meadow/").json()
+    assert meadow["keepsake_count"] == 1 and meadow["journal_xp_awarded"] == 15
+    assert memory["summary"] not in json.dumps(meadow)
+    replay = client.post("/api/chronicle/journal/", memory, format="json")
+    assert replay.status_code == 200, replay.content
+    assert client.get("/api/chronicle/meadow/").json() == meadow
     login(PARENT_USERNAME)
     parent_rows = collect_rows("/api/habits/")
     assert fixture["habits"]["foreign"] not in {row["id"] for row in parent_rows}
-    sys.stdout.write("Fixture checks passed: auth, pagination, scoped lists, caps, approval, skill XP, persistence.\n")
+    assert client.get("/api/chronicle/meadow/").status_code == 403
+    sys.stdout.write("Fixture checks passed: auth, pagination, scoped lists, caps, approval, skill XP, journal privacy, receipt replay, persistence.\n")
 
 
 def main() -> int:

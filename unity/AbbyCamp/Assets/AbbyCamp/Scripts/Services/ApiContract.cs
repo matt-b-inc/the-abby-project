@@ -116,6 +116,34 @@ namespace AbbyCamp.Services
             return !fields.TryGetValue(name, out var value) || value == "null";
         }
 
+        public static MeadowDto ParseMeadow(string json)
+        {
+            var fields = ReadObject(json);
+            if (RequireInteger(fields, "schema_version", 1) != 1)
+                throw new FormatException("This meadow response needs a newer version of your world.");
+            int count = RequireInteger(fields, "keepsake_count", 0);
+            RequireInteger(fields, "journal_xp_awarded", 0);
+            var records = ReadArray(Require(fields, "keepsakes"));
+            if (records.Count > 30 || records.Count > count)
+                throw new FormatException("The meadow returned an invalid keepsake collection.");
+            var result = JsonUtility.FromJson<MeadowDto>(json);
+            result.keepsakes = new KeepsakeDto[records.Count];
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            for (var index = 0; index < records.Count; index++)
+            {
+                var itemFields = ReadObject(records[index]);
+                foreach (var key in new[] { "receipt_id", "type", "title", "earned_at" }) RequireString(itemFields, key);
+                var item = JsonUtility.FromJson<KeepsakeDto>(records[index]);
+                if (item.receipt_id == null || !item.receipt_id.StartsWith("journal:", StringComparison.Ordinal)
+                    || !int.TryParse(item.receipt_id.Substring(8), NumberStyles.None, CultureInfo.InvariantCulture, out var entryId) || entryId < 1
+                    || !ids.Add(item.receipt_id) || item.type != "memory_bloom" || item.title != "Memory bloom"
+                    || !DateTimeOffset.TryParse(item.earned_at, CultureInfo.InvariantCulture, DateTimeStyles.None, out _))
+                    throw new FormatException("The meadow returned an incomplete keepsake.");
+                result.keepsakes[index] = item;
+            }
+            return result;
+        }
+
         public static ApiError HttpError(long status, string body, bool mutation, bool transportFailure)
         {
             string message = null;

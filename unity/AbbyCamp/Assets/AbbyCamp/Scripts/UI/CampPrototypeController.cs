@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using AbbyCamp.Data;
+using AbbyCamp.Presentation;
 using AbbyCamp.Services;
 using AbbyCamp.World;
 using UnityEngine;
@@ -15,11 +16,12 @@ namespace AbbyCamp.UI
         [SerializeField] private CampPlayerController player;
         [SerializeField] private CompanionFollower companion;
         [SerializeField] private CampTaskBoard taskBoard;
+        [SerializeField] private CampPresentationDefinition presentation;
 
         private const string DemoPracticeKey = "AbbyCamp.Demo.PracticeCompleted";
-        private readonly Color ink = new Color(0.16f, 0.22f, 0.23f);
-        private readonly Color paper = new Color(0.96f, 0.94f, 0.86f);
-        private readonly Color teal = new Color(0.13f, 0.40f, 0.37f);
+        private Color ink = new Color(.286275f, .219608f, .309804f);
+        private Color paper = new Color(1f, .972549f, .933333f);
+        private Color teal = new Color(.458824f, .376471f, .658824f);
         private AbbyApiClient api;
         private Font font;
         private RectTransform canvas;
@@ -30,7 +32,7 @@ namespace AbbyCamp.UI
         private RectTransform footerPanel;
         private Text titleLabel;
         private Button patButton;
-        private Button swapButton;
+        private Button keepsakesButton;
         private RectTransform modalSafeArea;
         private RectTransform modalSheet;
         private Text modalTitle;
@@ -49,6 +51,11 @@ namespace AbbyCamp.UI
         private Button connectButton;
         private HabitDto[] habits = Array.Empty<HabitDto>();
         private CharacterDto character;
+        private MeadowDto meadow;
+        private bool keepsakesOpen;
+        private bool meadowRefreshPending;
+        private float meadowRefreshAt;
+        private string meadowStatus = "";
         private bool busy;
         private bool boardOpen;
         private bool outcomeUnknown;
@@ -66,11 +73,12 @@ namespace AbbyCamp.UI
         public bool IsModalOpen => modal != null;
         public bool IsBusy => busy;
 
-        public void Configure(CampPlayerController campPlayer, CompanionFollower pet, CampTaskBoard board)
+        public void Configure(CampPlayerController campPlayer, CompanionFollower pet, CampTaskBoard board, CampPresentationDefinition worldPresentation = null)
         {
             player = campPlayer;
             companion = pet;
             taskBoard = board;
+            presentation = worldPresentation;
         }
 
         private void Start()
@@ -81,7 +89,13 @@ namespace AbbyCamp.UI
             api = GetComponent<AbbyApiClient>();
             if (api == null) api = gameObject.AddComponent<AbbyApiClient>();
             api.BrowserSessionChanged += BrowserSessionChanged;
-            font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            font = presentation != null && presentation.UiFont != null ? presentation.UiFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            if (presentation != null)
+            {
+                ink = presentation.Ink;
+                paper = presentation.Paper;
+                teal = presentation.Primary;
+            }
             demoComplete = PlayerPrefs.GetInt(DemoPracticeKey, 0) == 1;
             CreateInterface();
             if (taskBoard != null) taskBoard.InteractionRequested += OpenTaskBoard;
@@ -91,7 +105,7 @@ namespace AbbyCamp.UI
                 player.TaskBoardTapped += OpenTaskBoard;
             }
             RefreshHud();
-            Toast("Tap the ground to explore, or open Tasks to try a ritual.", 7f);
+            Toast("Tap the meadow to explore, or say hello to your dragon.", 7f);
 #if UNITY_WEBGL && !UNITY_EDITOR
             browserSessionDirty = true;
 #endif
@@ -120,14 +134,25 @@ namespace AbbyCamp.UI
             var inRange = taskBoard != null && taskBoard.IsInRange;
             boardButton.interactable = !busy && !IsModalOpen;
             patButton.interactable = !busy && !IsModalOpen && companion != null;
-            swapButton.interactable = !busy && !IsModalOpen && companion != null;
+            keepsakesButton.interactable = !busy && !IsModalOpen;
+            if (!IsDemo && !busy && !IsModalOpen && (meadowRefreshPending || Time.unscaledTime >= meadowRefreshAt))
+                StartCoroutine(LoadMeadow());
             promptLabel.text = IsModalOpen ? "" : inRange
                 ? "Tap the board or open Tasks"
                 : "Tap to walk · Tap your companion to say hello";
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // The alternate prototype model is an art-replacement check, not a
+            // second character or earned cosmetic in the released meadow.
             if (!IsModalOpen && Input.GetKeyDown(KeyCode.K)) SwapCompanion();
+#endif
             if (IsModalOpen && Input.GetKeyDown(KeyCode.Escape) && !busy) CloseModal();
             if (toastLabel != null && Time.unscaledTime > toastUntil) toastLabel.text = "";
             KeepFocusedInputVisible();
+        }
+
+        private void OnApplicationFocus(bool focused)
+        {
+            if (focused) meadowRefreshPending = true;
         }
 
         private void BrowserSessionChanged()
@@ -136,6 +161,10 @@ namespace AbbyCamp.UI
             // while its aborted request is finishing. Reconnect after it ends.
             habits = Array.Empty<HabitDto>();
             character = null;
+            meadow = null;
+            meadowStatus = "";
+            keepsakesOpen = false;
+            meadowRefreshPending = true;
             outcomeUnknown = false;
             canResolveOutcome = false;
             boardOpen = false;
@@ -186,7 +215,7 @@ namespace AbbyCamp.UI
                 new GameObject("CampEventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
 
             headingPanel = Panel(safeArea, "CampHeading", Vector2.zero, new Vector2(0, 1), new Vector2(0, 1), Vector2.zero, paper);
-            titleLabel = Label(headingPanel, "YOUR WORLD", 24, Vector2.zero, Vector2.zero, TextAnchor.UpperLeft, ink, FontStyle.Bold);
+            titleLabel = Label(headingPanel, presentation != null ? presentation.WorldTitle : "MEMORY MEADOW", 24, Vector2.zero, Vector2.zero, TextAnchor.UpperLeft, ink, FontStyle.Bold);
             titleLabel.resizeTextForBestFit = true;
             titleLabel.resizeTextMinSize = 16;
             titleLabel.resizeTextMaxSize = 24;
@@ -208,8 +237,8 @@ namespace AbbyCamp.UI
             boardButton.name = "TasksButton";
             patButton = Button(controlsPanel, "Say hello", Vector2.zero, new Vector2(100, 48), PatCompanion);
             patButton.name = "PatCompanionButton";
-            swapButton = Button(controlsPanel, "Change look", Vector2.zero, new Vector2(100, 48), SwapCompanion, true);
-            swapButton.name = "SwapCompanionButton";
+            keepsakesButton = Button(controlsPanel, "Keepsakes", Vector2.zero, new Vector2(100, 48), OpenKeepsakes, true);
+            keepsakesButton.name = "KeepsakesButton";
 
             footerPanel = Panel(safeArea, "InteractionHint", Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero, new Color(teal.r, teal.g, teal.b, 0.94f));
             promptLabel = Label(footerPanel, "", 14, Vector2.zero, Vector2.zero, TextAnchor.MiddleCenter, paper, FontStyle.Bold);
@@ -223,10 +252,99 @@ namespace AbbyCamp.UI
         public void OpenTaskBoard()
         {
             if (busy) return;
+            keepsakesOpen = false;
             if (!boardOpen) boardScrollPosition = 1f;
             boardOpen = true;
             DrawTaskBoard();
             if (!IsDemo) StartCoroutine(LoadAccountState());
+        }
+
+        public void OpenKeepsakes()
+        {
+            if (busy) return;
+            boardOpen = false;
+            keepsakesOpen = true;
+            DrawKeepsakes();
+            if (!IsDemo) StartCoroutine(LoadMeadow());
+        }
+
+        private void DrawKeepsakes()
+        {
+            BeginModal("YOUR KEEPSAKES", "Small memories, growing with you.");
+            var content = modalScroll.content;
+            FlowLabel(content, "KeepsakeExplanation", IsDemo
+                ? "A saved journal memory can become a memory bloom. Sign in to your journal to grow your collection."
+                : "Memory blooms mark journal memories already recognised by your account. Your words stay in your journal.", 16, ink);
+            if (busy) FlowLabel(content, "MeadowStatus", "Opening your keepsakes…", 15, teal);
+            else if (!string.IsNullOrEmpty(meadowStatus)) FlowLabel(content, "MeadowStatus", meadowStatus, 15, teal);
+            if (!IsDemo && meadow != null)
+            {
+                FlowLabel(content, "KeepsakeCount", meadow.keepsake_count + (meadow.keepsake_count == 1 ? " memory bloom" : " memory blooms"), 20, ink, FontStyle.Bold);
+                if (meadow.keepsakes.Length == 0)
+                    FlowLabel(content, "EmptyKeepsakes", "Your first bloom is waiting. Save a journal entry, then return to this meadow.", 17, ink);
+                foreach (var item in meadow.keepsakes)
+                {
+                    var row = Panel(content, "Keepsake_" + item.receipt_id, Vector2.zero, new Vector2(0, 1), new Vector2(0, 1), Vector2.zero, new Color(1, 1, 1, .66f));
+                    VerticalFlow(row, 12, 6);
+                    if (presentation != null && presentation.MemoryBloom != null)
+                    {
+                        var art = Box(row, "MemoryBloomArt", new Vector2(90, 90), Vector2.zero, Vector2.zero, Vector2.zero);
+                        var image = art.gameObject.AddComponent<Image>();
+                        image.sprite = presentation.MemoryBloom;
+                        image.preserveAspect = true;
+                        image.raycastTarget = false;
+                        var layout = art.gameObject.AddComponent<LayoutElement>();
+                        layout.minHeight = layout.preferredHeight = 90;
+                    }
+                    FlowLabel(row, "KeepsakeTitle", item.title, 18, ink, FontStyle.Bold);
+                    var date = DateTimeOffset.Parse(item.earned_at).LocalDateTime.ToString("d MMM yyyy");
+                    FlowLabel(row, "KeepsakeDate", "Remembered " + date, 15, teal);
+                }
+                if (meadow.keepsake_count > meadow.keepsakes.Length)
+                    FlowLabel(content, "KeepsakeWindow", "Showing your latest " + meadow.keepsakes.Length + " blooms. All your memories remain in the journal.", 15, ink);
+            }
+            var refresh = FlowButton(content, "RefreshKeepsakesButton", "Refresh keepsakes", () => StartCoroutine(LoadMeadow()));
+            refresh.interactable = !busy && !IsDemo;
+            FooterButton("KeepsakeJournalButton", "Open journal", api.OpenJournal).interactable = !busy;
+            FooterButton("CloseKeepsakesButton", "Back to meadow", CloseModal).interactable = !busy;
+            LayoutInterface();
+        }
+
+        private IEnumerator LoadMeadow()
+        {
+            if (busy || IsDemo) yield break;
+            busy = true;
+            meadowRefreshPending = false;
+            meadowRefreshAt = Time.unscaledTime + 30f;
+            if (keepsakesOpen) DrawKeepsakes();
+            ApiError failure = null;
+            MeadowDto loaded = null;
+            yield return api.FetchMeadow(value => loaded = value, error => failure = error);
+            busy = false;
+            if (failure != null)
+            {
+                meadowStatus = failure.Message;
+                if (failure.RequiresLogin)
+                {
+                    api.ClearSession();
+                    meadow = null;
+                    habits = Array.Empty<HabitDto>();
+                    character = null;
+                }
+            }
+            else if (loaded != null && !IsDemo && api.CurrentUser.role == "child")
+            {
+                meadow = loaded;
+                meadowStatus = "Your collection is up to date.";
+                var unseen = MeadowReceiptMemory.Observe(api.BaseUrl, api.CurrentUser.id, meadow);
+                if (unseen != null)
+                {
+                    companion?.Celebrate();
+                    Toast("A memory bloom joined your collection. Your dragon is cheering you on!", 8f);
+                }
+            }
+            RefreshHud();
+            if (keepsakesOpen) DrawKeepsakes();
         }
 
         private void DrawTaskBoard()
@@ -377,10 +495,12 @@ namespace AbbyCamp.UI
                     api.ClearSession();
                     habits = Array.Empty<HabitDto>();
                     character = null;
+                    meadow = null;
                 }
             }
             RefreshHud();
             if (boardOpen) DrawTaskBoard();
+            if (!IsDemo) meadowRefreshPending = true;
         }
 
         private void ResolveUncertainSave()
@@ -401,6 +521,8 @@ namespace AbbyCamp.UI
                 api.ClearSession();
                 habits = Array.Empty<HabitDto>();
                 character = null;
+                meadow = null;
+                meadowStatus = "";
                 outcomeUnknown = false;
                 canResolveOutcome = false;
                 boardStatus = "";
@@ -503,9 +625,9 @@ namespace AbbyCamp.UI
         private void RefreshHud()
         {
             if (modeLabel == null) return;
-            modeLabel.text = IsDemo ? "DEMO CAMP" : "CONNECTED · " + api.CurrentUser.DisplayName;
+            modeLabel.text = IsDemo ? "EXPLORE THE MEADOW" : "CONNECTED · " + api.CurrentUser.DisplayName;
             sessionHint.text = IsDemo ? "Explore, say hello, or try a practice ritual."
-                : "Open Tasks to record a ritual you have done.";
+                : "Record in your journal, then return to your dragon.";
             connectButton.GetComponentInChildren<Text>().text = IsDemo ? "Connect your account" : "Sign out of camp";
             connectButton.interactable = !busy;
             progressLabel.text = IsDemo
@@ -516,7 +638,7 @@ namespace AbbyCamp.UI
         private RectTransform BeginModal(string title, string subtitle)
         {
             if (modal != null) { modal.SetActive(false); Destroy(modal); }
-            var backdrop = Panel(canvas, "ModalBackdrop", Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero, new Color(0.06f, 0.12f, 0.12f, 0.70f));
+            var backdrop = Panel(canvas, "ModalBackdrop", Vector2.zero, Vector2.zero, Vector2.zero, Vector2.zero, new Color(ink.r, ink.g, ink.b, .70f));
             backdrop.anchorMin = Vector2.zero;
             backdrop.anchorMax = Vector2.one;
             backdrop.offsetMin = Vector2.zero;
@@ -572,6 +694,7 @@ namespace AbbyCamp.UI
             modalScroll = null;
             modalFooter = null;
             boardOpen = false;
+            keepsakesOpen = false;
             player?.SetInputEnabled(true);
             taskBoard?.SetInputEnabled(true);
         }
@@ -605,7 +728,7 @@ namespace AbbyCamp.UI
             controlsPanel.anchoredPosition = new Vector2((size.x - actionWidth) / 2, 12);
             controlsPanel.sizeDelta = new Vector2(actionWidth, 64);
             var buttonWidth = (actionWidth - 40) / 3;
-            var buttons = new[] { boardButton, patButton, swapButton };
+            var buttons = new[] { boardButton, patButton, keepsakesButton };
             for (int i = 0; i < buttons.Length; i++)
             {
                 Place(buttons[i].GetComponent<RectTransform>(), new Vector2(12 + i * (buttonWidth + 8), -8), new Vector2(buttonWidth, 48));
@@ -766,7 +889,13 @@ namespace AbbyCamp.UI
         private RectTransform Panel(Transform parent, string name, Vector2 size, Vector2 anchor, Vector2 pivot, Vector2 position, Color color)
         {
             var rect = Box(parent, name, size, anchor, pivot, position);
-            rect.gameObject.AddComponent<Image>().color = color;
+            var image = rect.gameObject.AddComponent<Image>();
+            image.color = color;
+            if (name != "ModalBackdrop")
+            {
+                image.sprite = CampUiShapes.RoundedPanel;
+                image.type = Image.Type.Sliced;
+            }
             return rect;
         }
 
@@ -778,7 +907,9 @@ namespace AbbyCamp.UI
             text.text = value;
             text.supportRichText = false;
             text.fontSize = size;
-            text.fontStyle = style;
+            // The shared file is already the 600-weight static face. Asking
+            // Unity for Bold can synthesize thickness or select another face.
+            text.fontStyle = presentation != null && font == presentation.UiFont ? FontStyle.Normal : style;
             text.color = color;
             text.alignment = alignment;
             text.horizontalOverflow = HorizontalWrapMode.Wrap;
@@ -789,7 +920,7 @@ namespace AbbyCamp.UI
 
         private Button Button(Transform parent, string label, Vector2 position, Vector2 size, Action clicked, bool quiet = false)
         {
-            var rect = Panel(parent, label, size, new Vector2(0, 1), new Vector2(0, 1), position, quiet ? new Color(0.13f, 0.4f, 0.37f, 0.10f) : teal);
+            var rect = Panel(parent, label, size, new Vector2(0, 1), new Vector2(0, 1), position, quiet ? new Color(teal.r, teal.g, teal.b, .12f) : teal);
             var button = rect.gameObject.AddComponent<Button>();
             button.targetGraphic = rect.GetComponent<Image>();
             var colors = button.colors;

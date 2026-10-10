@@ -422,6 +422,9 @@ export const handlers = [
   // Default: no journal entry for today. Individual tests override with
   // server.use() to simulate the "already wrote today" path.
   http.get('*/api/chronicle/journal/today/', () => new HttpResponse(null, { status: 204 })),
+  http.get('*/api/chronicle/meadow/', () => HttpResponse.json({
+    schema_version: 1, keepsake_count: 0, journal_xp_awarded: 0, keepsakes: [],
+  })),
   http.patch(/\/api\/chronicle\/\d+\/$/, () => HttpResponse.json({})),
   http.delete(/\/api\/chronicle\/\d+\/$/, () => new HttpResponse(null, { status: 204 })),
 ];

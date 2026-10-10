@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +14,7 @@ from rest_framework.views import APIView
 from apps.chronicle.access import visible_chronicle_entries
 from apps.chronicle.grade_serializers import GradeListQuerySerializer
 from apps.chronicle.grade_services import GradeRequestConflictError, GradeService
+from apps.chronicle.meadow import journal_meadow_progress
 from apps.chronicle.models import ChronicleComment, ChronicleEntry
 from apps.chronicle.serializers import (
     ChronicleCommentSerializer,
@@ -79,6 +81,13 @@ class ChronicleViewSet(
         if chapter_year:
             qs = qs.filter(chapter_year=chapter_year)
         return qs
+
+    @action(detail=False, methods=["get"], url_path="meadow")
+    def meadow(self, request):
+        """Own confirmed journal keepsakes, with no private memory content."""
+        if request.user.role != "child":
+            raise PermissionDenied("The meadow is available to child accounts.")
+        return Response(journal_meadow_progress(request.user))
 
     @action(detail=False, methods=["get"], url_path="summary")
     def summary(self, request):

@@ -75,6 +75,9 @@ export function useApi(apiFn, deps = []) {
       if (!mountedRef.current || controller.signal.aborted) return;
       dataRef.current = result;
       setData(result);
+      // A caller refreshing after a save may need the confirmed response.
+      // Return only a current, mounted result; older loads stay fenced above.
+      return result;
     } catch (err) {
       if (!mountedRef.current || controller.signal.aborted) return;
       if (err?.name === 'AbortError') return;

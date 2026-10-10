@@ -577,6 +577,8 @@ export const updateJournalEntry = (id, { title, summary, is_private }) =>
 // Fetch today's journal entry for request.user; returns null when the
 // child hasn't written yet (the backend 204s and api.get resolves to null).
 export const getTodayJournal = () => api.get('/chronicle/journal/today/');
+// Read-only, body-free journal keepsakes shared with Unity Play.
+export const getMeadow = () => api.get('/chronicle/meadow/');
 
 // Grade memories retain their original marking format. Recognition is
 // returned by the server and is independent of the recorded mark.

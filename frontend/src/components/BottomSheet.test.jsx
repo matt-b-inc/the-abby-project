@@ -78,6 +78,16 @@ function renderMobile(props = {}) {
 }
 
 describe('BottomSheet', () => {
+  it.each([
+    ['desktop', renderDesktop],
+    ['mobile', renderMobile],
+  ])('keeps an opt-in page presentation on the %s portal surface', (_name, renderSheet) => {
+    renderSheet({ title: 'Meadow journal', surfaceClassName: 'meadow-sheet', surfaceStyle: { '--meadow-paper': '#FFF8EE' } });
+    const dialog = screen.getByRole('dialog', { name: 'Meadow journal' });
+    expect(dialog).toHaveClass('meadow-sheet');
+    expect(dialog.style.getPropertyValue('--meadow-paper')).toBe('#FFF8EE');
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+  });
   it('renders title + children on desktop', () => {
     renderDesktop();
     expect(screen.getByText('Title')).toBeInTheDocument();
