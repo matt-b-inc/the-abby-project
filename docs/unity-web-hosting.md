@@ -4,9 +4,11 @@ Unity source and the existing React/Django deployment have separate builds. A PR
 
 ## Prepared preview — 2026-10-10
 
-The latest local image is **`abby-unity-web:preview-20261010-v2`**. Its portable archive is on the development PC at `unity/AbbyCamp/Builds/WebHosting/b2a053249de44ad99c986f880f3e7ea0/unity-web-image.tar`, approximately 41 MB. This ignored artifact is not included in GitHub source. It was built from the successful Unity 6000.6.5f1 Web export and passed all nine hosting checks. The image has not been published or deployed.
+The current deployed image is **`abby-unity-web:preview-20261010-v2`**. Its portable archive is on the development PC at `unity/AbbyCamp/Builds/WebHosting/b2a053249de44ad99c986f880f3e7ea0/unity-web-image.tar`, approximately 41 MB. This ignored artifact is not included in GitHub source. It was built from the successful Unity 6000.6.5f1 Web export and passed all nine hosting checks.
 
-For your local Coolify setup, use the **Local Coolify route without a registry** below: transfer/load that archive on the selected Docker host, create the separate Compose resource, and set `UNITY_WEB_IMAGE=abby-unity-web:preview-20261010-v2`. Deploy the React update as well, so its service worker allows `/play/` navigation. Then open the existing HTTPS hostname followed by `/play/` in Android Chrome.
+On 2026-10-10, the archive was transferred through the existing `proxmox-1` SSH connection into Coolify's LXC 119, verified against SHA-256 `4651234abbaae42a9f292c3930e773f437be6f15dae6598a0f56bb39ad6b1f16`, loaded into Docker, and started through Coolify's own `StartService` action. The existing **abby-unity-web** Compose resource (`k137wrcpgc4l0i234jf2adm2`) reports `running:healthy`. [The live world](https://abby.bos.lol/play/) loads and responds to companion greetings in a 393×852 browser viewport, with no browser errors. The public Wasm response has `application/wasm`; the existing Abby app's `/health` remains HTTP 200 with its database up. Actual Android/iPhone hardware checks remain pending.
+
+For another manual deployment, use the **Local Coolify route without a registry** below: transfer/load a newly tagged archive on the selected Docker host, use the separate Compose resource, and update `UNITY_WEB_IMAGE`. The React service worker must allow `/play/` navigation. Open `https://abby.bos.lol/play/` in Android Chrome to test the current deployment.
 
 On the phone, start in practice mode: tap the ground, greet the companion, change its appearance, and open Tasks. Rotate while signing in to check keyboard and layout behavior. Use your child account only when ready to record real completed activities. Check reopening the page and backgrounding/resuming it; browser viewport checks cannot establish real-device performance or keyboard behavior. iPhone Safari remains a separate check when Abby's phone is available.
 
@@ -23,6 +25,46 @@ Close AbbyCamp in Unity, then run from the repository root:
 This exports to `unity/AbbyCamp/Builds/Web`, stages only those browser files and the nginx configuration into a new ignored `Builds/WebHosting` directory, and builds an image. It never pushes or deploys. `Publish-Web.ps1` without `-BuildImage` creates the same portable context for a Docker build on another machine. Transfer that context as an artifact, or explicitly publish the built image to your registry. A Coolify Git-source build alone cannot find the ignored export. Use a new version tag for each tested build and do not overwrite old tags; a registry digest identifies fixed image content.
 
 The initial export disables Unity compression. nginx applies HTTP gzip to JavaScript, Wasm, and data at runtime. Wasm is `application/wasm`; absent `.wasm`, `.data`, or other files return 404 instead of the React or Unity index. The index and build files revalidate on reload, so an update does not silently mix old and new files.
+
+## Repeatable release from this Windows PC
+
+[Deploy-Web.ps1](../scripts/unity/Deploy-Web.ps1) performs the release as one command: build Unity, package a new versioned image/archive, run the nine local hosting checks, transfer through the existing SSH connection, verify the archive checksum, load the image, and start the selected Coolify resource. It then checks the exact running image is healthy, compares the public runtime/style files with the local image, checks the Unity HTML, and confirms the existing Abby app health endpoint still responds. Cloudflare adds scripts to HTML, so that HTML is checked for its Unity canvas and matching loader rather than an identical byte hash.
+
+The complete existing-archive deployment path was tested successfully on 2026-10-10 with the current preview. Coolify activity 72 finished, the service remained `running:healthy`, and the public runtime files matched the packaged image. The separate Unity build and packaging scripts had already passed for that preview; `-WhatIf`, `-VerifyDeployed`, and resource/daemon mismatch guards also passed.
+
+For the host verified on 2026-10-10, Coolify runs inside Proxmox LXC **119**, reached through the existing SSH alias **`proxmox-1`**. This route uses `scp` followed by `pct push`, then Coolify 4.1.2's installed `StartService` action inside the `coolify` container. It retains Coolify's normal saved configuration, activity and deployment handling. It requires no new API token. The former `192.168.4.67` deployment configuration is not used.
+
+Close AbbyCamp in Unity and start Docker Desktop, then run from the repository root in PowerShell:
+
+```powershell
+$unityDeliveryTarget = @{
+    SshTarget = 'proxmox-1'
+    ProxmoxContainerId = 119
+    ResourceKind = 'Service'
+    ResourceUuid = 'k137wrcpgc4l0i234jf2adm2'
+    ExpectedResourceName = 'abby-unity-web'
+    ExpectedCoolifyServerId = 0
+    ExpectedDockerHostId = '661d990b-0f03-4758-a11b-09c5c1729230'
+    PublicUrl = 'https://abby.bos.lol/play/'
+}
+./scripts/unity/Deploy-Web.ps1 @unityDeliveryTarget
+```
+
+The parameters contain deployment identities, not credentials. The script checks the resource name/UUID/server and Docker daemon ID before proceeding. It uses the existing known SSH host key and non-interactive SSH authentication; it does not bypass host-key verification. If this machine cannot already authenticate to that alias, configure its SSH access first. It calls the installed Coolify action rather than changing routing or starting an unmanaged Compose stack. Recheck that action after a Coolify upgrade.
+
+Each build receives a fresh `abby-unity-web:release-…` tag. Older tags and local/remote archives are kept for rollback; the script refuses to replace different image content under an existing tag. The selected resource's `UNITY_WEB_IMAGE` is the only deployment setting changed. This also overrides the initial image fallback in the supplied Compose file for later releases. The script neither pushes Git nor creates a recurring task. Unity build errors, checksum mismatches, unexpected resources, image collisions or failed verification stop the release and report an error; it does not automatically roll back or prune images.
+
+To deploy an archive you already built, or explicitly return to an older saved release, pass both its path and tag:
+
+```powershell
+./scripts/unity/Deploy-Web.ps1 @unityDeliveryTarget `
+    -ArchivePath unity/AbbyCamp/Builds/WebHosting/b2a053249de44ad99c986f880f3e7ea0/unity-web-image.tar `
+    -ImageTag abby-unity-web:preview-20261010-v2
+```
+
+`-SkipUnityBuild` packages the existing Web export instead of invoking Unity. Use it only when that export is already the build you intend to release. `-WhatIf` performs artifact preparation/local checks and reads the selected remote identity, but skips remote transfer, image load, setting changes and deployment. It can still build or import an image and run disposable containers on this PC. With an existing archive, `-VerifyDeployed` runs those local checks and validates the currently hosted files/container without changing or restarting the remote resource. Local hosting-check containers are removed afterward. These are one-shot commands.
+
+For a different host with direct SSH and API access, omit `ProxmoxContainerId` and supply the verified `SshTarget`, Docker daemon ID, Coolify origin, resource kind/UUID/server, and public URL. `CoolifyUrl` requires HTTPS, or a loopback HTTP SSH tunnel. The script prompts securely for an API token and keeps it only in memory. It uses the documented [environment update](https://coolify.io/docs/api/endpoints/services/update-env-by-service-uuid) and [service start](https://coolify.io/docs/api/endpoints/services/start-service-by-uuid) endpoints, or their corresponding application endpoints for a Docker Compose application. The target must already be configured with `UNITY_WEB_IMAGE` and `pull_policy: never`; a registry-backed Docker Image resource needs the registry route below instead.
 
 ## Registry route: a separate Coolify image resource
 
