@@ -1,0 +1,32 @@
+name: PWA edge cache checks
+
+on:
+  pull_request:
+    paths:
+      - config/urls.py
+      - config/tests/test_pwa_urls.py
+      - infra/cloudflare/pwa-*.rule.json
+      - docs/operations/pwa-edge-cache.md
+      - .github/workflows/pwa-edge-cache-checks.yml
+
+permissions:
+  contents: read
+
+jobs:
+  origin-headers:
+    runs-on: ubuntu-latest
+    env:
+      DEBUG: "False"
+      SECRET_KEY: pwa-cache-ci-only-not-for-production
+      DATABASE_URL: "sqlite:///:memory:"
+      ALLOWED_HOSTS: localhost,127.0.0.1,testserver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Check PWA origin headers and routing
+        run: python manage.py test config.tests.test_pwa_urls --noinput --verbosity=2
