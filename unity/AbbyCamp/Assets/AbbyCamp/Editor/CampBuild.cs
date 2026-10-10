@@ -68,6 +68,8 @@ namespace AbbyCamp.Editor
             PlayerSettings.defaultWebScreenWidth = 393;
             PlayerSettings.defaultWebScreenHeight = 852;
             PlayerSettings.WebGL.template = "PROJECT:AbbyPhone";
+            // Cached scripts must never be paired with a different release's Wasm.
+            PlayerSettings.WebGL.nameFilesAsHashes = true;
             // Uncompressed files work with ordinary static hosting without special
             // Content-Encoding headers. Compression can be added after phone testing.
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
