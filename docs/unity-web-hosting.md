@@ -2,9 +2,15 @@
 
 Unity source and the existing React/Django deployment have separate builds. A PR merge updates source; it does **not** compile or deploy the game. The Unity export, packaging contexts, logs, and screenshots stay ignored under `unity/AbbyCamp/Builds` and are not committed.
 
-## Prepared preview — 2026-10-10
+## Shared sign-in release — 2026-10-10
 
-The current deployed image is **`abby-unity-web:preview-20261010-v2`**. Its portable archive is on the development PC at `unity/AbbyCamp/Builds/WebHosting/b2a053249de44ad99c986f880f3e7ea0/unity-web-image.tar`, approximately 41 MB. This ignored artifact is not included in GitHub source. It was built from the successful Unity 6000.6.5f1 Web export and passed all nine hosting checks.
+The deployed Unity image is **`abby-unity-web:release-8a61458-20261010-183538`**, built from commit `8a614580eb2b0087daab753997eca09320363a13`. Its local archive is `unity/AbbyCamp/Builds/WebHosting/21627b864d324ceb81f5ae35d41927c0/unity-web-image.tar`, SHA-256 `928bc5e6bab5baf7671d3d071c425ea6b2a2bb32fc3c8bb19de0c32ecdf7351a`. Coolify activity 75 deployed it after all nine hosting checks, exact-image health verification, and public runtime file checksum verification. The web application separately deployed the shared sign-in changes through Coolify deployment 2218.
+
+An initial deployment exposed a browser using the previous framework with the new Wasm. The previous Unity image was restored while the build was corrected. Unity now names its runtime files by content hash, so changed runtime versions use distinct URLs. The release command also builds into a fresh `Builds/WebReleases` directory each time, preserving older exports and preventing obsolete files from entering a new package.
+
+## Initial preview — 2026-10-10
+
+The initial deployed image was **`abby-unity-web:preview-20261010-v2`**. Its portable archive is on the development PC at `unity/AbbyCamp/Builds/WebHosting/b2a053249de44ad99c986f880f3e7ea0/unity-web-image.tar`, approximately 41 MB. This ignored artifact is not included in GitHub source. It was built from the successful Unity 6000.6.5f1 Web export and passed all nine hosting checks.
 
 On 2026-10-10, the archive was transferred through the existing `proxmox-1` SSH connection into Coolify's LXC 119, verified against SHA-256 `4651234abbaae42a9f292c3930e773f437be6f15dae6598a0f56bb39ad6b1f16`, loaded into Docker, and started through Coolify's own `StartService` action. The existing **abby-unity-web** Compose resource (`k137wrcpgc4l0i234jf2adm2`) reports `running:healthy`. [The live world](https://abby.bos.lol/play/) loads and responds to companion greetings in a 393×852 browser viewport, with no browser errors. The public Wasm response has `application/wasm`; the existing Abby app's `/health` remains HTTP 200 with its database up. Actual Android/iPhone hardware checks remain pending.
 

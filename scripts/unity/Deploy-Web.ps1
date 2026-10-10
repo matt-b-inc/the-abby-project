@@ -216,13 +216,23 @@ try {
         if (-not $ImageTag) { $ImageTag = 'abby-unity-web:release-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8) }
         & docker image inspect $ImageTag *> $null
         if ($LASTEXITCODE -eq 0) { throw 'That image tag already exists locally. Choose a new version tag to preserve rollback images.' }
-        if (-not $SkipUnityBuild) {
-            $taskBuildParameters = @{ Target = 'Web' }
-            if ($UnityEditor) { $taskBuildParameters.UnityEditor = $UnityEditor }
-            & (Join-Path $PSScriptRoot 'Build-Camp.ps1') @taskBuildParameters
-        }
-        $taskPackage = @(& (Join-Path $PSScriptRoot 'Publish-Web.ps1') -BuildImage -SaveImage -ImageTag $ImageTag) |
-            Where-Object { $_.ImageArchive } | Select-Object -Last 1
+        $taskPreparationWhatIf = $WhatIfPreference
+        try {
+            # -WhatIf still prepares and verifies local artifacts. Its remote
+            # ShouldProcess gate below retains the original preference.
+            $WhatIfPreference = $false
+            $taskExportPath = Join-Path $PSScriptRoot '..\..\unity\AbbyCamp\Builds\Web'
+            if (-not $SkipUnityBuild) {
+                # Keep each release separate so obsolete unhashed or hashed files
+                # cannot be included alongside the current runtime.
+                $taskExportPath = Join-Path $PSScriptRoot ('..\..\unity\AbbyCamp\Builds\WebReleases\' + [guid]::NewGuid().ToString('N'))
+                $taskBuildParameters = @{ Target = 'Web'; OutputDirectory = $taskExportPath }
+                if ($UnityEditor) { $taskBuildParameters.UnityEditor = $UnityEditor }
+                & (Join-Path $PSScriptRoot 'Build-Camp.ps1') @taskBuildParameters
+            }
+            $taskPackage = @(& (Join-Path $PSScriptRoot 'Publish-Web.ps1') -ExportPath $taskExportPath -BuildImage -SaveImage -ImageTag $ImageTag) |
+                Where-Object { $_.ImageArchive } | Select-Object -Last 1
+        } finally { $WhatIfPreference = $taskPreparationWhatIf }
         if (-not $taskPackage) { throw 'Packaging did not return an image archive.' }
         $ArchivePath = $taskPackage.ImageArchive
     }
