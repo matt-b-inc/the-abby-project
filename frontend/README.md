@@ -11,6 +11,7 @@ npm run lint           # ESLint check
 npm run test           # Vitest watcher (interactive)
 npm run test:run       # One-shot test run (no watch)
 npm run test:coverage  # Run tests with v8 coverage report → coverage/
+npm run test:pwa       # Chromium: real Django static routing, two releases, offline
 ```
 
 ## Testing
@@ -37,3 +38,33 @@ vi.mock('framer-motion', async () => {
 ```
 
 Modal components use `createPortal(…, document.body)`, so query their backdrop and contents off `document.body` rather than the RTL container.
+
+### Browser PWA release verification
+
+Install the repository's Python requirements and run `npx playwright install chromium`
+from `frontend/` before `npm run test:pwa`. If Python is in a separate virtual
+environment, set `PWA_PYTHON` to that environment's Python executable.
+
+The browser test builds two small synthetic React/CSS releases using the real
+`vite.config.js`, `PwaStatusProvider`, and `UpdateBanner`. It serves each through
+the actual Django URL configuration and WhiteNoise with `DEBUG=False` and
+`CompressedStaticFilesStorage`, restarting the server on the same loopback port
+to replace the first release completely. All builds/static files are temporary,
+and API/Unity responses are synthetic. It uses no application database or
+credentials, does not read `.env`, and disables Sentry uploads.
+
+It verifies that root worker and manifest routing works, the offline shell can
+load its JS/CSS and a previously unopened lazy chunk, Chronicle requests remain
+network-only even if a stale sentinel was planted in `api-reads`, ordinary API
+reads retain their offline fallback, and `/play`, `/play/`, plus a descendant
+bypass the SPA while `/playground` remains an offline SPA route.
+After replacement, the old release must boot from precached assets whose network
+URLs now return 404, show the real update banner, activate the new worker on
+Reload, and boot the new release offline. It also keeps release A usable offline
+while release B is waiting for the user to accept the update. The independent
+`pwa-release-test.yml` workflow runs this on relevant pull requests and pushes.
+
+To verify that a prior configuration fails the same test, copy that config into
+`frontend/` under a temporary filename and set `PWA_VITE_CONFIG` to its absolute
+path. The file must remain inside the frontend package so its plugin imports can
+resolve. Playwright retains a browser trace under `test-results/` on failure.

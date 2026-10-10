@@ -14,6 +14,7 @@ export default defineConfig(({ command }) => {
     tailwindcss(),
     VitePWA({
       base: '/',
+      scope: '/',
       registerType: 'prompt',
       injectRegister: false,
       filename: 'sw.js',
@@ -51,6 +52,14 @@ export default defineConfig(({ command }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // The worker and shell have root URLs, but bundled assets are served
+        // by WhiteNoise at /static/assets/. Cache the same URLs index.html
+        // requests so the previous release can still boot after a deploy.
+        modifyURLPrefix: { 'assets/': '/static/assets/' },
+        dontCacheBustURLsMatching: /^\/static\/assets\//,
+        // Django serves named PWA root files, not generated workbox-*.js.
+        // Inline the runtime so /sw.js never imports the SPA HTML catch-all.
+        inlineWorkboxRuntime: true,
         // Web Push handlers live in their own root-served file rather than
         // switching this whole config to injectManifest — see push-sw.js for
         // why generateSW stays in charge.
