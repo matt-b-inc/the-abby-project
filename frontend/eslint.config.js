@@ -43,7 +43,7 @@ export default defineConfig([
   {
     // Build/config files run in Node, not the browser, so allow ``process``
     // and friends.
-    files: ['vite.config.js', 'vitest.config.js', 'eslint.config.js'],
+    files: ['vite.config.js', 'vitest.config.js', 'eslint.config.js', 'playwright.config.js', 'e2e/**/*.js'],
     languageOptions: { globals: globals.node },
   },
   {
