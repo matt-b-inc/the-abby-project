@@ -16,6 +16,14 @@ export function setToken(token) {
   }
 }
 
+// Requests can finish after another tab/client has logged out or switched
+// accounts. Only remove the credential that the completed request used.
+export function clearTokenIfCurrent(token) {
+  if (getToken() !== token) return false;
+  setToken(null);
+  return true;
+}
+
 // Audit L5: coalesce concurrent 401-triggered reloads. If a page issues
 // multiple parallel API calls and the stored token is stale, every
 // failing call hits the self-heal path and would queue its own
@@ -23,10 +31,9 @@ export function setToken(token) {
 // always; the flag guarantees only the first 401 reloads. Reset on
 // module load (i.e. after the reload completes) is automatic.
 let _reloadInFlight = false;
-function _selfHealReload() {
-  if (_reloadInFlight) return;
+function _selfHealReload(token) {
+  if (_reloadInFlight || !token || !clearTokenIfCurrent(token)) return;
   _reloadInFlight = true;
-  setToken(null);
   window.location.reload();
 }
 
@@ -104,9 +111,10 @@ async function request(path, options = {}) {
     // without requiring users to manually purge browser session data.
     // Skipped when no auth header was sent — that path is legitimate
     // anonymous access (boot-time getMe, login-form credential retries).
-    // Concurrent 401s coalesce via ``_selfHealReload`` — see audit L5.
+    // Only clear the credential this request used: a delayed 401 must not
+    // discard a newer sign-in. Concurrent 401s coalesce — see audit L5.
     if (res.status === 401 && hadAuth) {
-      _selfHealReload();
+      _selfHealReload(token);
     }
 
     if (res.status >= 500) {
@@ -172,7 +180,7 @@ export async function getBlob(path) {
 
     // Same self-heal path as `request()` — see that function's comment.
     if (res.status === 401 && hadAuth) {
-      _selfHealReload();
+      _selfHealReload(token);
     }
 
     if (res.status >= 500) {

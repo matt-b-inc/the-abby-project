@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Text;
+using System.Runtime.InteropServices;
 using AbbyCamp.Data;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -23,6 +24,8 @@ namespace AbbyCamp.Services
         private string configurationError;
         private int sessionVersion;
         private bool loginInFlight;
+        private string browserOrigin;
+        private string observedBrowserToken;
         private readonly HashSet<UnityWebRequest> activeRequests = new HashSet<UnityWebRequest>();
         private readonly Dictionary<int, HabitDto> knownHabits = new Dictionary<int, HabitDto>();
 
@@ -30,6 +33,13 @@ namespace AbbyCamp.Services
         public UserDto CurrentUser { get; private set; }
         public bool IsAuthenticated => !string.IsNullOrEmpty(token) && CurrentUser != null;
         public bool MutationInFlight { get; private set; }
+        public event Action BrowserSessionChanged;
+
+#if UNITY_WEBGL && !UNITY_EDITOR
+        [DllImport("__Internal")] private static extern string AbbySession_ReadToken();
+        [DllImport("__Internal")] private static extern void AbbySession_ClearToken(string expectedToken);
+        [DllImport("__Internal")] private static extern void AbbySession_OpenJournal();
+#endif
 
         [Serializable] private sealed class LoginBody
         {
@@ -46,18 +56,99 @@ namespace AbbyCamp.Services
             // A /play/ build connects to the same origin as the web app and API.
             // Never default a phone browser to the developer PC's loopback server.
             if (Uri.TryCreate(Application.absoluteURL, UriKind.Absolute, out var page))
-                baseUrl = page.GetLeftPart(UriPartial.Authority);
+                baseUrl = browserOrigin = page.GetLeftPart(UriPartial.Authority);
 #endif
             if (!ConfigureBaseUrl(baseUrl, out var error)) configurationError = error;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            observedBrowserToken = AbbySession_ReadToken() ?? "";
+#endif
         }
 
         private void OnDestroy() => ClearSession();
+
+        private void Update() => SynchronizeBrowserSession();
+
+        // Read again before every request and after every response as well as
+        // during play. Background tabs may pause Update while the journal logs
+        // out or switches account. Never accept an old response into a new session.
+        private bool SynchronizeBrowserSession()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            string current = AbbySession_ReadToken() ?? "";
+            if (!string.Equals(observedBrowserToken, current, StringComparison.Ordinal))
+            {
+                observedBrowserToken = current;
+                ClearSession();
+                BrowserSessionChanged?.Invoke();
+                return true;
+            }
+#endif
+            return false;
+        }
+
+        public void OpenJournal()
+        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            AbbySession_OpenJournal();
+#endif
+        }
+
+        /// <summary>Web only: validate the journal's existing same-origin token
+        /// using /me. No password login, token minting, or mutation is performed.
+        /// Parent sessions remain available to the journal, not camp actions.</summary>
+        public IEnumerator ResumeBrowserSession(Action<UserDto> success, Action<ApiError> failure)
+        {
+            SynchronizeBrowserSession();
+            if (loginInFlight || MutationInFlight)
+            {
+                failure?.Invoke(new ApiError("Wait for the current action to finish before connecting."));
+                yield break;
+            }
+            ClearSession();
+            if (string.IsNullOrEmpty(observedBrowserToken))
+            {
+                failure?.Invoke(new ApiError("Sign in in your journal, then return to your world.", requiresLogin: true));
+                yield break;
+            }
+            token = observedBrowserToken;
+            loginInFlight = true;
+            try
+            {
+                yield return Send("GET", baseUrl + "/api/auth/me/", null, true, false, json =>
+                {
+                    UserDto user;
+                    try { user = ApiContract.ParseUser(json); }
+                    catch (Exception exception)
+                    {
+                        ClearSession();
+                        failure?.Invoke(InvalidResponse(exception, false));
+                        return;
+                    }
+                    if (user.role != "child")
+                    {
+                        ClearSession();
+                        failure?.Invoke(new ApiError("This world uses a child account. Parent tools are in the journal."));
+                        return;
+                    }
+                    CurrentUser = user;
+                    success?.Invoke(user);
+                }, problem => { ClearSession(); failure?.Invoke(problem); }, validatingSession: true);
+            }
+            finally { loginInFlight = false; }
+        }
 
         /// <summary>Accepts an origin such as https://abby.example.com. Plain HTTP
         /// is allowed only for loopback development. Changing origin ends session.</summary>
         public bool ConfigureBaseUrl(string value, out string error)
         {
             if (!TryValidateBaseUrl(value, out var origin, out error)) return false;
+#if UNITY_WEBGL && !UNITY_EDITOR
+            if (!string.Equals(origin, browserOrigin, StringComparison.Ordinal))
+            {
+                error = "Open your world from the same address as your journal.";
+                return false;
+            }
+#endif
             if (!string.Equals(baseUrl, origin, StringComparison.Ordinal) || configurationError != null)
                 ClearSession();
             baseUrl = origin;
@@ -97,6 +188,10 @@ namespace AbbyCamp.Services
 
         public IEnumerator Login(string username, string password, Action<UserDto> success, Action<ApiError> failure)
         {
+#if UNITY_WEBGL && !UNITY_EDITOR
+            failure?.Invoke(new ApiError("Sign in in your journal, then return to your world.", requiresLogin: true));
+            yield break;
+#else
             if (loginInFlight || MutationInFlight)
             {
                 failure?.Invoke(new ApiError("Wait for the current action to finish before signing in."));
@@ -129,6 +224,7 @@ namespace AbbyCamp.Services
                 }, failure);
             }
             finally { loginInFlight = false; }
+#endif
         }
 
         public IEnumerator FetchMe(Action<UserDto> success, Action<ApiError> failure)
@@ -268,15 +364,16 @@ namespace AbbyCamp.Services
         }
 
         private IEnumerator Send(string method, string url, string json, bool authenticated, bool mutation,
-            Action<string> success, Action<ApiError> failure)
+            Action<string> success, Action<ApiError> failure, bool validatingSession = false)
         {
+            SynchronizeBrowserSession();
             bool validOrigin = TryValidateBaseUrl(baseUrl, out _, out var error);
             if (configurationError != null || !validOrigin)
             {
                 failure?.Invoke(new ApiError(configurationError ?? error));
                 yield break;
             }
-            if (authenticated && !IsAuthenticated)
+            if (authenticated && (string.IsNullOrEmpty(token) || (!validatingSession && !IsAuthenticated)))
             {
                 failure?.Invoke(new ApiError("Sign in to connect to your Abby account.", requiresLogin: true));
                 yield break;
@@ -287,6 +384,7 @@ namespace AbbyCamp.Services
                 yield break;
             }
             int version = sessionVersion;
+            string requestToken = token;
             if (mutation) MutationInFlight = true;
             using (var request = new UnityWebRequest(url, method))
             {
@@ -295,7 +393,7 @@ namespace AbbyCamp.Services
                 // Never forward credentials through a server redirect.
                 request.redirectLimit = 0;
                 request.SetRequestHeader("Accept", "application/json");
-                if (authenticated) request.SetRequestHeader("Authorization", "Token " + token);
+                if (authenticated) request.SetRequestHeader("Authorization", "Token " + requestToken);
                 if (json != null)
                 {
                     request.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
@@ -314,6 +412,7 @@ namespace AbbyCamp.Services
                         yield break;
                     }
                     yield return operation;
+                    SynchronizeBrowserSession();
                     if (version != sessionVersion)
                     {
                         failure?.Invoke(new ApiError(mutation ?
@@ -326,7 +425,16 @@ namespace AbbyCamp.Services
                     if (request.result != UnityWebRequest.Result.Success || request.responseCode < 200 || request.responseCode >= 300)
                     {
                         var problem = ApiContract.HttpError(request.responseCode, request.downloadHandler.text, mutation, transportFailure);
-                        if (problem.RequiresLogin) ClearSession();
+                        if (problem.RequiresLogin)
+                        {
+#if UNITY_WEBGL && !UNITY_EDITOR
+                            // Only the rejected credential may be discarded. A
+                            // late 401 cannot erase a newer journal account.
+                            if (authenticated && request.responseCode == 401)
+                                AbbySession_ClearToken(requestToken);
+#endif
+                            ClearSession();
+                        }
                         failure?.Invoke(problem);
                         yield break;
                     }

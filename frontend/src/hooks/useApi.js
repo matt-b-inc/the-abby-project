@@ -152,6 +152,21 @@ export function AuthProvider({ children }) {
   const [offline, setOffline] = useState(false);
 
   useEffect(() => {
+    // Another same-origin tab (including /play/) shares the credential.
+    // Reload so rendered user/role and in-flight page data cannot stay on
+    // the old account while new requests use the replacement credential.
+    const onStorage = (event) => {
+      if (event.storageArea !== localStorage) return;
+      if (event.key !== null && event.key !== STORAGE_KEYS.AUTH_TOKEN) return;
+      if (event.key !== null && event.oldValue === event.newValue) return;
+      writeCachedUser(null);
+      window.location.reload();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  useEffect(() => {
     // Handle token from Google OAuth callback redirect
     const params = new URLSearchParams(window.location.search);
     const oauthToken = params.get('token');
@@ -161,14 +176,19 @@ export function AuthProvider({ children }) {
       window.history.replaceState({}, '', window.location.pathname);
     }
 
+    const token = getToken();
     getMe()
       .then((u) => {
+        // A storage change or logout may have replaced this boot session
+        // before /me/ finished. Do not cache the previous account again.
+        if (getToken() !== token) return;
         setUser(u);
         setOffline(false);
         writeCachedUser(u);
         Sentry.setUser(u ? { id: u.id, username: u.username, role: u.role } : null);
       })
       .catch((err) => {
+        if (getToken() !== token) return;
         // Distinguish "the server said no" from "we never reached the
         // server". api/client.js attaches ``.status`` to every HTTP error,
         // so a rejection WITHOUT one is a fetch/network failure — e.g. the
@@ -215,15 +235,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    const token = getToken();
     try {
       await apiLogout();
     } finally {
       // Even if the logout POST fails (offline), drop all local session
-      // state — apiLogout's own finally already cleared the token.
-      writeCachedUser(null);
-      setUser(null);
-      setOffline(false);
-      Sentry.setUser(null);
+      // state unless a newer sign-in replaced the session during the POST.
+      // apiLogout's own finally conditionally clears the original token.
+      const currentToken = getToken();
+      if (!currentToken || currentToken === token) {
+        writeCachedUser(null);
+        setUser(null);
+        setOffline(false);
+        Sentry.setUser(null);
+      }
     }
   }, []);
 

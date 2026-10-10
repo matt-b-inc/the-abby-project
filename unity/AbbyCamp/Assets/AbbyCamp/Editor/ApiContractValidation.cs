@@ -81,6 +81,10 @@ namespace AbbyCamp.Editor
                 bool completed = false;
                 var coroutine = client.LogPositiveHabit(null, _ => completed = true, problem => rejection = problem);
                 Check(!coroutine.MoveNext() && !completed && rejection != null && rejection.RequiresLogin, "Logged-out tap never issues a request");
+                rejection = null;
+                coroutine = client.ResumeBrowserSession(_ => completed = true, problem => rejection = problem);
+                Check(!coroutine.MoveNext() && !completed && rejection != null && rejection.RequiresLogin && !client.IsAuthenticated,
+                    "Missing browser credential cannot mint a token or authorize camp actions");
                 client.ConfigureBaseUrl("https://abby.example.com", out _);
                 Check(!client.ConfigureBaseUrl("http://remote.example.com", out _) && client.BaseUrl == "https://abby.example.com", "Rejected configuration preserves valid origin");
             }

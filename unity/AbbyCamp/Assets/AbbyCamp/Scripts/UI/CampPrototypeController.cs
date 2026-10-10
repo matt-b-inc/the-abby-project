@@ -60,6 +60,7 @@ namespace AbbyCamp.UI
         private float patAvailableAt;
         private float boardScrollPosition = 1f;
         private string boardStatus = "";
+        private bool browserSessionDirty;
 
         public bool IsDemo => api == null || !api.IsAuthenticated;
         public bool IsModalOpen => modal != null;
@@ -79,6 +80,7 @@ namespace AbbyCamp.UI
             if (taskBoard == null) taskBoard = FindFirstObjectByType<CampTaskBoard>();
             api = GetComponent<AbbyApiClient>();
             if (api == null) api = gameObject.AddComponent<AbbyApiClient>();
+            api.BrowserSessionChanged += BrowserSessionChanged;
             font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             demoComplete = PlayerPrefs.GetInt(DemoPracticeKey, 0) == 1;
             CreateInterface();
@@ -90,10 +92,14 @@ namespace AbbyCamp.UI
             }
             RefreshHud();
             Toast("Tap the ground to explore, or open Tasks to try a ritual.", 7f);
+#if UNITY_WEBGL && !UNITY_EDITOR
+            browserSessionDirty = true;
+#endif
         }
 
         private void OnDestroy()
         {
+            if (api != null) api.BrowserSessionChanged -= BrowserSessionChanged;
             if (taskBoard != null) taskBoard.InteractionRequested -= OpenTaskBoard;
             if (player != null)
             {
@@ -106,6 +112,11 @@ namespace AbbyCamp.UI
         private void Update()
         {
             if (canvas == null) return;
+            if (browserSessionDirty && !busy)
+            {
+                browserSessionDirty = false;
+                StartCoroutine(ConnectBrowserSession());
+            }
             var inRange = taskBoard != null && taskBoard.IsInRange;
             boardButton.interactable = !busy && !IsModalOpen;
             patButton.interactable = !busy && !IsModalOpen && companion != null;
@@ -117,6 +128,47 @@ namespace AbbyCamp.UI
             if (IsModalOpen && Input.GetKeyDown(KeyCode.Escape) && !busy) CloseModal();
             if (toastLabel != null && Time.unscaledTime > toastUntil) toastLabel.text = "";
             KeepFocusedInputVisible();
+        }
+
+        private void BrowserSessionChanged()
+        {
+            // Remove the previous account's presentation immediately, even
+            // while its aborted request is finishing. Reconnect after it ends.
+            habits = Array.Empty<HabitDto>();
+            character = null;
+            outcomeUnknown = false;
+            canResolveOutcome = false;
+            boardOpen = false;
+            boardStatus = "";
+            if (toastLabel != null) toastLabel.text = "";
+            toastUntil = 0;
+            DismissModal();
+            RefreshHud();
+            browserSessionDirty = true;
+        }
+
+        private IEnumerator ConnectBrowserSession()
+        {
+            busy = true;
+            ApiError failure = null;
+            yield return api.ResumeBrowserSession(_ => { }, error => failure = error);
+            busy = false;
+            RefreshHud();
+            if (failure != null)
+            {
+                Toast(failure.Message, 7f);
+                yield break;
+            }
+            // An aborted save from the previous account may have finished its
+            // failure callback while validation was queued. Its uncertainty
+            // cannot be carried into this account's task board.
+            outcomeUnknown = false;
+            canResolveOutcome = false;
+            uncertainHabitId = 0;
+            uncertainTapsBefore = 0;
+            boardStatus = "";
+            Toast("Your journal account is connected. Open Tasks to see your rituals.", 7f);
+            yield return LoadAccountState();
         }
 
         private void CreateInterface()
@@ -356,6 +408,18 @@ namespace AbbyCamp.UI
                 Toast("Signed out of this camp. You can keep exploring in demo mode.");
                 return;
             }
+#if UNITY_WEBGL && !UNITY_EDITOR
+            BeginModal("BRING YOUR PROGRESS", "Use the same account as your journal.");
+            FlowLabel(modalScroll.content, "ConnectionMessage", "Sign in or switch accounts in your journal, then return here. Your world will connect to that account.", 16, ink);
+            FooterButton("OpenJournalButton", "Open journal", api.OpenJournal);
+            FlowButton(modalScroll.content, "ResumeJournalButton", "Connect journal account", () =>
+            {
+                CloseModal();
+                StartCoroutine(ConnectBrowserSession());
+            });
+            FooterButton("CancelConnectionButton", "Keep exploring", CloseModal);
+            LayoutInterface();
+#else
             BeginModal("BRING YOUR PROGRESS", "Connect your existing Abby account.");
             var content = modalScroll.content;
             InputField server = null;
@@ -382,6 +446,7 @@ namespace AbbyCamp.UI
             });
             cancel = FooterButton("CancelConnectionButton", "Keep exploring", CloseModal);
             LayoutInterface();
+#endif
         }
 
         private IEnumerator Connect(string username, string password, Text message, Button submit, Button cancel)
@@ -495,6 +560,11 @@ namespace AbbyCamp.UI
         private void CloseModal()
         {
             if (busy) return;
+            DismissModal();
+        }
+
+        private void DismissModal()
+        {
             if (modal != null) Destroy(modal);
             modal = null;
             modalSheet = null;

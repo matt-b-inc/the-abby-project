@@ -475,6 +475,59 @@ describe('401 self-heal', () => {
     expect(reloadSpy).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['request', () => api.get('/dashboard/')],
+    ['blob download', () => getBlob('/dashboard/')],
+  ])('preserves a replacement session after a delayed %s 401', async (_name, sendRequest) => {
+    setToken('old-session');
+    let releaseResponse;
+    let signalStarted;
+    const started = new Promise((resolve) => { signalStarted = resolve; });
+    const responseReady = new Promise((resolve) => { releaseResponse = resolve; });
+    server.use(http.get('*/api/dashboard/', async ({ request }) => {
+      expect(request.headers.get('authorization')).toBe('Token old-session');
+      signalStarted();
+      await responseReady;
+      return HttpResponse.json({ detail: 'Invalid token.' }, { status: 401 });
+    }));
+
+    const pending = sendRequest().catch((err) => err);
+    await started;
+    // Another tab/client switched accounts or rotated the token while the
+    // old account's request was in flight.
+    setToken('replacement-session');
+    releaseResponse();
+    expect(await pending).toBeInstanceOf(Error);
+
+    expect(getToken()).toBe('replacement-session');
+    expect(reloadSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['request', () => api.get('/dashboard/')],
+    ['blob download', () => getBlob('/dashboard/')],
+  ])('ignores a delayed %s 401 after logout', async (_name, sendRequest) => {
+    setToken('old-session');
+    let releaseResponse;
+    let signalStarted;
+    const started = new Promise((resolve) => { signalStarted = resolve; });
+    const responseReady = new Promise((resolve) => { releaseResponse = resolve; });
+    server.use(http.get('*/api/dashboard/', async () => {
+      signalStarted();
+      await responseReady;
+      return HttpResponse.json({ detail: 'Invalid token.' }, { status: 401 });
+    }));
+
+    const pending = sendRequest().catch((err) => err);
+    await started;
+    setToken(null);
+    releaseResponse();
+    expect(await pending).toBeInstanceOf(Error);
+
+    expect(getToken()).toBe('');
+    expect(reloadSpy).not.toHaveBeenCalled();
+  });
+
   it('coalesces concurrent 401s into a single reload (audit L5)', async () => {
     setToken('stale-token');
     server.use(

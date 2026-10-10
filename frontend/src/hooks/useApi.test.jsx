@@ -283,6 +283,148 @@ describe('AuthProvider + useAuth', () => {
       expect(localStorage.getItem(STORAGE_KEYS.CACHED_USER)).toBeNull();
       expect(logoutSpy).toHaveBeenCalled();
     });
+
+    it('a delayed logout does not clear a newer login or its cached user', async () => {
+      setToken('old-session');
+      server.use(http.get('*/api/auth/me/', () => HttpResponse.json(buildUser())));
+      const wrapper = ({ children }) => <AuthProvider>{children}</AuthProvider>;
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      let finishLogout;
+      logoutSpy.mockImplementationOnce(() => new Promise((resolve) => { finishLogout = resolve; }));
+      const newerUser = buildUser({ id: 77, username: 'new-account' });
+      loginSpy.mockImplementationOnce(async () => {
+        setToken('new-session');
+        return newerUser;
+      });
+      let pending;
+      act(() => { pending = result.current.logout(); });
+      await act(async () => { await result.current.login('new-account', 'synthetic-password'); });
+      await act(async () => {
+        finishLogout();
+        await pending;
+      });
+
+      expect(result.current.user).toEqual(newerUser);
+      expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.CACHED_USER))).toEqual(newerUser);
+      expect(localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)).toBe('new-session');
+    });
+  });
+
+  describe('shared browser session changes', () => {
+    let originalLocation;
+    let reloadSpy;
+
+    beforeEach(() => {
+      reloadSpy = vi.fn();
+      originalLocation = window.location;
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        writable: true,
+        value: {
+          href: originalLocation.href,
+          origin: originalLocation.origin,
+          protocol: originalLocation.protocol,
+          host: originalLocation.host,
+          hostname: originalLocation.hostname,
+          port: originalLocation.port,
+          pathname: originalLocation.pathname,
+          search: originalLocation.search,
+          hash: originalLocation.hash,
+          reload: reloadSpy,
+        },
+      });
+      setToken('old-session');
+      server.use(http.get('*/api/auth/me/', () => HttpResponse.json(buildUser())));
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        writable: true,
+        value: originalLocation,
+      });
+    });
+
+    it.each(['new-session', null])('reloads after another tab changes auth to %s', async (newToken) => {
+      const wrapper = ({ children }) => <AuthProvider>{children}</AuthProvider>;
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      expect(localStorage.getItem(STORAGE_KEYS.CACHED_USER)).not.toBeNull();
+
+      setToken(newToken);
+      act(() => window.dispatchEvent(new StorageEvent('storage', {
+        key: STORAGE_KEYS.AUTH_TOKEN,
+        oldValue: 'old-session',
+        newValue: newToken,
+        storageArea: localStorage,
+      })));
+
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)).toBe(newToken);
+      expect(localStorage.getItem(STORAGE_KEYS.CACHED_USER)).toBeNull();
+    });
+
+    it('reloads after another tab clears localStorage', async () => {
+      const wrapper = ({ children }) => <AuthProvider>{children}</AuthProvider>;
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      localStorage.clear();
+      act(() => window.dispatchEvent(new StorageEvent('storage', { storageArea: localStorage })));
+      expect(reloadSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not repopulate the old user cache from a delayed boot response', async () => {
+      let releaseResponse;
+      let signalStarted;
+      const started = new Promise((resolve) => { signalStarted = resolve; });
+      const responseReady = new Promise((resolve) => { releaseResponse = resolve; });
+      server.use(http.get('*/api/auth/me/', async () => {
+        signalStarted();
+        await responseReady;
+        return HttpResponse.json(buildUser());
+      }));
+      const wrapper = ({ children }) => <AuthProvider>{children}</AuthProvider>;
+      const { result } = renderHook(() => useAuth(), { wrapper });
+      await started;
+      setToken('new-session');
+      act(() => window.dispatchEvent(new StorageEvent('storage', {
+        key: STORAGE_KEYS.AUTH_TOKEN, oldValue: 'old-session', newValue: 'new-session', storageArea: localStorage,
+      })));
+      await act(async () => { releaseResponse(); });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+
+      expect(result.current.user).toBeNull();
+      expect(localStorage.getItem(STORAGE_KEYS.CACHED_USER)).toBeNull();
+      expect(localStorage.getItem(STORAGE_KEYS.AUTH_TOKEN)).toBe('new-session');
+    });
+
+    it('ignores unrelated, unchanged, or sessionStorage events and detaches on unmount', async () => {
+      const wrapper = ({ children }) => <AuthProvider>{children}</AuthProvider>;
+      const { result, unmount } = renderHook(() => useAuth(), { wrapper });
+      await waitFor(() => expect(result.current.loading).toBe(false));
+      const cachedUser = localStorage.getItem(STORAGE_KEYS.CACHED_USER);
+      act(() => {
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: STORAGE_KEYS.CACHED_USER, oldValue: null, newValue: cachedUser, storageArea: localStorage,
+        }));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: STORAGE_KEYS.AUTH_TOKEN, oldValue: 'old-session', newValue: 'old-session', storageArea: localStorage,
+        }));
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: STORAGE_KEYS.AUTH_TOKEN, oldValue: 'old-session', newValue: 'new-session', storageArea: sessionStorage,
+        }));
+      });
+      expect(reloadSpy).not.toHaveBeenCalled();
+      expect(localStorage.getItem(STORAGE_KEYS.CACHED_USER)).toBe(cachedUser);
+
+      unmount();
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: STORAGE_KEYS.AUTH_TOKEN, oldValue: 'old-session', newValue: 'new-session', storageArea: localStorage,
+      }));
+      expect(reloadSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('consumes ?token= from the URL and cleans history', async () => {

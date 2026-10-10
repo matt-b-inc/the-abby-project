@@ -1,4 +1,4 @@
-import { api, setToken, getBlob } from './client';
+import { api, setToken, getToken, clearTokenIfCurrent, getBlob } from './client';
 
 // Auth
 export const login = async (username, password) => {
@@ -14,10 +14,11 @@ export const signup = async ({ username, password, display_name, family_name }) 
   return data;
 };
 export const logout = async () => {
+  const token = getToken();
   try {
     await api.post('/auth/', { action: 'logout' });
   } finally {
-    setToken(null);
+    clearTokenIfCurrent(token);
   }
 };
 export const getMe = () => api.get('/auth/me/');

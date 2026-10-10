@@ -70,6 +70,25 @@ describe('auth endpoints', () => {
     expect(localStorage.getItem('abby_auth_token')).toBeNull();
   });
 
+  it.each([200, 500])('preserves a new login when the old logout finishes with %s', async (status) => {
+    let finishLogout;
+    fetchSpy.mockImplementationOnce(() => new Promise((resolve) => { finishLogout = resolve; }));
+    const pending = api.logout().catch((err) => err);
+    const logoutInit = fetchSpy.mock.calls.at(-1)[1];
+    expect(logoutInit.headers.Authorization).toBe('Token tok');
+    expect(JSON.parse(logoutInit.body)).toEqual({ action: 'logout' });
+
+    // A new explicit login completes before the previous logout response.
+    fetchSpy.mockImplementationOnce(() => okJson({ token: 'new-session' }));
+    await api.login('another-user', 'synthetic-password');
+    finishLogout(status === 200 ? await okJson() : {
+      ok: false, status, statusText: 'oops', json: () => Promise.resolve({ error: 'logout failed' }),
+    });
+    await pending;
+
+    expect(localStorage.getItem('abby_auth_token')).toBe('new-session');
+  });
+
   it('getMe calls /auth/me/', async () => {
     await api.getMe();
     expect(lastCall().url).toMatch(/\/api\/auth\/me\/$/);

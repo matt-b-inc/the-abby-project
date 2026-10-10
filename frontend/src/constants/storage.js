@@ -61,7 +61,8 @@ export const STORAGE_KEYS = {
   // ``.status`` on the thrown error — api/client.js attaches ``.status`` to
   // every HTTP error) while AUTH_TOKEN is still present: the offline-hydrate
   // path that keeps a valid session on the journal instead of bouncing to
-  // Login when the wifi flakes. Cleared on logout. Best-effort cache — never
-  // trusted over a live response, and never read for HTTP 401/403 rejections.
+  // Login when the wifi flakes. Cleared on logout or external session change.
+  // Best-effort cache — never trusted over a live response, and never read
+  // for HTTP 401/403 rejections.
   CACHED_USER: 'auth:last-user',
 };

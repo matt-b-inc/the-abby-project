@@ -49,11 +49,15 @@ Demo mode is usable without a server. Its one practice action is saved locally a
 ## Connect real rituals
 
 1. Start the existing Django development server, or use the deployed app's HTTPS origin.
-2. Choose **Connect your account** in the camp and enter a child account's credentials. Web builds use the page's origin automatically. The editor/Windows harness also has an origin field (for example, `http://127.0.0.1:8000`, without `/api`).
+2. For Web `/play/`, sign in to the journal on the same browser origin first. The world validates that existing account through `/api/auth/me/` and connects automatically for a child account. If sign-in is needed, **Connect your account → Open journal** returns to the journal. The editor/Windows harness retains explicit child-account login and an origin field (for example, `http://127.0.0.1:8000`, without `/api`).
 3. Open **Tasks**. It lists that child's active, approved positive/both habits, including disabled rows that reached their daily cap.
 4. Record a habit only after doing it. The client calls the existing `POST /api/habits/{id}/log/` once and celebrates only an acknowledged response. Refreshes read current habits and character level/streak from Django.
 
-Passwords and tokens stay in memory. Restarting the client requires signing in again. Django rotates its single per-user token on login, so signing in here replaces other sessions for the same account. The camp's sign-out clears only its local credentials.
+Web builds read the journal's `abby_auth_token` from same-origin browser storage, validate it with Django, and keep the camp's session in memory. They never ask for a password or mint a token. Reloading `/play/` reuses a valid journal session; the journal and world can remain connected together. Storage access failures, missing credentials, and parent accounts leave the world in demo mode. Tokens never enter navigation URLs or cross-window messages.
+
+Journal logout or account switching clears the world's old identity and tasks, aborts active requests, and validates the new session before real actions are enabled. Every request checks for a changed browser credential before sending and before accepting its response, including after browser resume. A rejected token is removed only if it still matches the credential used by that request. A failed validation does not retry automatically: use **Connect your account** to retry after restoring the connection. **Sign out of camp** disconnects only this world, keeping the journal session; choose **Connect** to reconnect. Journal logout continues to revoke the token on Django.
+
+Editor/Windows passwords and tokens stay in memory, and restarting that client requires explicit login. Django still rotates its single per-user token on every successful password login, invalidating previous sessions. Native sign-out continues to clear only local camp credentials.
 
 A lost or ambiguous save response disables further logging until the account is refreshed. If the refresh still cannot confirm the result, check ritual history in the web app, then choose **I checked ritual history** to resume. Record the ritual again only if it is missing from that history. Mutations never retry automatically; the backend does not yet provide idempotency keys.
 
@@ -75,6 +79,7 @@ From the repository root in PowerShell:
 ./scripts/unity/Build-Camp.ps1 -Target Web
 ./scripts/unity/Publish-Web.ps1 -BuildImage -SaveImage -ImageTag abby-unity-web:preview-1
 ./scripts/unity/Test-WebHosting.ps1 -ImageTag abby-unity-web:preview-1
+node --test scripts/unity/test_browser_session.cjs
 ```
 
 The build script uses **6000.6.5f1** at Unity Hub's default Windows installation location. A custom installation path can be passed with `-UnityEditor`. Close this project in the editor before a batch build. Web output is in `Builds/Web` with a `Logs/build-web.log` log. Normal builds preserve the saved scene. Pass `-RebuildScene` only to regenerate the starting camp and replace its scene and generated presentation assets. `-ValidateOnly` performs scene/API checks without exporting; `-Target Windows` retains the desktop harness.
@@ -106,3 +111,11 @@ It uses real Django views against disposable SQLite, runs the built player, capt
 The 6000.6.5f1 Web export passed scene/asset validation and 41 API contract checks. Browser checks covered 320×568 and 393×852 portrait views, 844×393 landscape, and a simulated keyboard-reduced viewport. The walkthrough verified practice persistence, ground movement and camera follow, direct Tasks access away from the board, companion greetings and appearance changes, credential preservation on rotation, sign-in, scrolling, and sign-out.
 
 Against disposable Django data, an injected HTTP 503 blocked further saves through refresh until history acknowledgement. Neither refresh nor acknowledgement posted another log. One later confirmed save increased the fixture habit to one tap and skill XP from 95 to 105; the capped task remained disabled. This validates request handling and visible browser interaction, not physical touch gestures or a real phone keyboard. The packaged nginx image has a separate nine-check hosting verification. Android Chrome hardware testing is next, followed by iPhone Safari when available.
+
+## Shared browser session verification — 2026-10-10
+
+The handoff passed 25 Django auth/family tests, 12 JavaScript bridge tests, and the complete React suite (2,346 tests; coverage gates, lint, and production build passed). Unity 6000.6.5f1 exported the Web build after scene checks and 42 API contract checks.
+
+Browser checks against disposable loopback Django accounts confirmed automatic adoption, journal/world coexistence, local camp sign-out and reconnection, journal logout, stale-token rejection/clearing, parent-session preservation, and restoration after reloading `/play/`. Switching to another family's child while an earlier save response was delayed removed the old account's tasks and toast; the new account could save its own ritual without inheriting the old uncertainty. The fixture recorded exactly two explicitly requested habit saves, with no automatic retries. Its four password logins came only from the fixture's journal controls, including account changes; opening, reconnecting, and reloading the world added none.
+
+This validates the browser/IL2CPP bridge and live Django boundary. Physical iPhone/Android lifecycle testing remains outstanding. The source patch and local Web export do not update the deployed preview; deployment is a separate step.

@@ -52,6 +52,9 @@ class AuthView(APIView):
     successful login now mints a fresh token and revokes any prior one,
     which has the side effect of "logging in elsewhere kicks out previous
     sessions" — a documented security feature, not a bug.
+
+    Logout revokes the token that authenticated its request. An older logout
+    already in flight must not revoke a replacement issued by a later login.
     """
 
     permission_classes = [permissions.AllowAny]
@@ -80,8 +83,11 @@ class AuthView(APIView):
                 {"error": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED
             )
         elif action == "logout":
-            if request.user.is_authenticated:
-                Token.objects.filter(user=request.user).delete()
+            if request.user.is_authenticated and isinstance(request.auth, Token):
+                # Authentication may precede a concurrent password login's
+                # rotation. Delete only this request's credential, preserving
+                # the replacement. Clients sharing the logout credential end.
+                Token.objects.filter(user=request.user, key=request.auth.key).delete()
             return Response({"ok": True})
         return Response(
             {"error": "Invalid action"}, status=status.HTTP_400_BAD_REQUEST
