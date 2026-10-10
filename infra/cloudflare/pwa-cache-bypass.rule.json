@@ -1,0 +1,9 @@
+{
+  "description": "Bypass edge cache for Abby unversioned PWA scripts",
+  "expression": "(http.host eq \"abby.bos.lol\" and http.request.uri.path in {\"/sw.js\" \"/push-sw.js\" \"/registerSW.js\"})",
+  "action": "set_cache_settings",
+  "action_parameters": {
+    "cache": false
+  },
+  "enabled": true
+}

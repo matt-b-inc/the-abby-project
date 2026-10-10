@@ -157,19 +157,26 @@ _PWA_ROOT_FILES = [
     "favicon.svg",
 ]
 
+# These scripts have stable URLs, so both the worker and its imports must be
+# revalidated. Icons and the manifest retain their existing caching behavior.
+_PWA_REVALIDATED_SCRIPTS = {"sw.js", "push-sw.js", "registerSW.js"}
+
 
 def _pwa_static_serve(request, path):
-    """Serve a PWA root file from frontend_dist with the right cache headers.
-    sw.js MUST carry Cache-Control: no-cache so the browser revalidates on
-    every page load — otherwise users get stuck on a stale SW that controls
-    a bundle that no longer exists."""
+    """Serve PWA root files, keeping unversioned scripts fresh on update checks."""
     response = static_serve(
         request,
         path,
         document_root=str(settings.BASE_DIR / "frontend_dist"),
     )
-    if path == "sw.js":
-        response["Cache-Control"] = "no-cache"
+    if path in _PWA_REVALIDATED_SCRIPTS:
+        # Apply after static_serve so HEAD and conditional 304 responses carry
+        # the same policy. Imported scripts can use the browser HTTP cache even
+        # when the top-level worker's update check bypasses it.
+        response["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
+        # Keep Cloudflare's edge policy separate from its browser TTL rewriting.
+        # A provider cache-rule override still needs the prepared path exception.
+        response["Cloudflare-CDN-Cache-Control"] = "no-store"
     return response
 
 
