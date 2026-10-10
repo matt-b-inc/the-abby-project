@@ -148,7 +148,22 @@ namespace AbbyCamp.World
         private void TapWorld(Camera view, Vector2 position)
         {
             var ray = view.ScreenPointToRay(position);
-            if (Physics.Raycast(ray, out var hit, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            bool physicsHit = Physics.Raycast(ray, out var hit, 100f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            // Portraits may be taller than the following motor. Their visible
+            // bounds remain tappable without enlarging gameplay collision.
+            var pet = FindFirstObjectByType<CompanionFollower>();
+            if (pet != null && pet.Appearance != null && pet.Appearance.Definition != null
+                && pet.Appearance.Definition.ModelPrefab == null && pet.Appearance.Definition.Portrait != null)
+            {
+                var portrait = pet.GetComponentInChildren<SpriteRenderer>();
+                if (portrait != null && portrait.bounds.IntersectRay(ray, out var portraitDistance)
+                    && (!physicsHit || portraitDistance <= hit.distance))
+                {
+                    CompanionTapped?.Invoke();
+                    return;
+                }
+            }
+            if (physicsHit)
             {
                 if (hit.collider.GetComponentInParent<CompanionFollower>() != null)
                 {

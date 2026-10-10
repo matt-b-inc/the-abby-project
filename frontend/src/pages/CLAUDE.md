@@ -16,6 +16,38 @@ The 2026-05 audit lifted two layout primitives out of the per-page copy-paste pa
 - All raw `text-xs` and `text-sm` replaced with semantic tokens (`text-caption`, `text-body`, `text-tiny`, `text-lede`) across ~110 instances.
 - 30+ raw `<button>` elements migrated to `<Button>` or `<IconButton>` primitives across Habits, Chores, Settings, Manage, Inventory, Payments, Trials, ProjectNew, ClockPage, Rewards, Projects, Achievements, and Badges.
 
+## Memory Meadow (first shared storybook slice)
+
+`/meadow` is a lazy-loaded child-only page under `JournalShell`, reached from
+the `MeadowVisitCard` on child Today. Existing journal/archive and parent
+pages keep their current behavior. The page links directly to same-origin
+`/play/` so the shared browser sign-in continues into Unity.
+
+`pages/meadow/meadow.constants.js` adapts generated
+`src/storybook/presentation.json` and bundled, hashed image/font URLs. The
+source manifest lives at `shared/storybook/presentation.json`; update it
+through `scripts/storybook/sync_presentation.py` rather than editing the
+generated copy. Art filenames never identify a keepsake. Temporary dragon
+portraits can be replaced independently of journal receipts and companion ID.
+
+Capture reuses `JournalEntryFormModal`, first checking the existing
+`getTodayJournal` endpoint to choose create or edit. Its private default,
+family sharing choice, device drafts and idempotent retry remain intact.
+Opt-in `surfaceClassName` / `surfaceStyle` pass through to `BottomSheet` so
+the portal's capture and confirmation surfaces use the meadow palette and
+bundled Nunito without changing other forms.
+The optional second `onSaved` argument reports the form's effective mode,
+including a POST 409 recovery into an edit; the meadow uses that value when
+deciding whether a confirmed receipt can trigger a new-memory celebration.
+
+`getMeadow` reads `/api/chronicle/meadow/`: verified, body-free journal award
+receipts become `memory_bloom` keepsakes. Count is lifetime total; the array
+contains the newest 30. A confirmed creation refreshes this endpoint and
+celebrates only the saved journal's previously unknown receipt ID. Edits,
+known receipt replays, unavailable rewards and uncertain saves never invent
+another bloom. Say hello is local companion feedback and grants no reward.
+Celebration motion respects `prefers-reduced-motion`.
+
 ## Quests hub (commits `3e8c18c`, `69d7b48`)
 
 The Quests page consolidates all "things to do" under one tab hub. Seven top-level `ChapterHub` tabs:

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "palette": {
+    "paper": "#FFF8EE",
+    "ink": "#49384F",
+    "primary": "#7560A8",
+    "grass": "#A9CFA9",
+    "accent": "#F4B6A0",
+    "sky": "#DCEEF4",
+    "lavender": "#E5DCF6",
+    "mint": "#D7ECDD",
+    "gold": "#FFD892",
+    "muted_ink": "#726779"
+  },
+  "typography": {
+    "family": "Nunito",
+    "font": "Nunito-SemiBold.ttf"
+  },
+  "companion": {
+    "id": "meadow-dragon",
+    "label": "Your dragon",
+    "art_key": "dragon",
+    "temporary": true,
+    "portrait": "dragon-idle.png",
+    "happy_portrait": "dragon-happy.png",
+    "blink_portrait": "dragon-blink.png"
+  },
+  "keepsakes": [
+    { "type": "memory_bloom", "title": "Memory bloom", "image": "memory-bloom.png" }
+  ]
+}

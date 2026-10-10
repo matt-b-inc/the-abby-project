@@ -1,0 +1,135 @@
+/* Scoped first slice: shared presentation tokens follow the companion into
+   Play without changing the existing journal cover or utility pages. */
+@font-face {
+  font-family: "Abby Nunito";
+  src: url("../../storybook/assets/Nunito-SemiBold.ttf") format("truetype");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+.meadow-page,
+.meadow-visit {
+  color: var(--meadow-ink);
+  font-family: var(--meadow-font);
+}
+
+.meadow-page {
+  background: var(--meadow-paper);
+  border-radius: 2rem;
+  padding: 1.5rem;
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--meadow-ink) 7%, transparent);
+}
+
+.meadow-page h1,
+.meadow-page h2,
+.meadow-page h3,
+.meadow-visit-title {
+  font-family: var(--meadow-font);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+}
+
+.meadow-page h1 { font-size: clamp(2rem, 5vw, 2.75rem); line-height: 1.12; margin: 0.3rem 0 0.65rem; }
+.meadow-page h2 { font-size: 1.5rem; line-height: 1.3; margin: 0.25rem 0 0.65rem; }
+.meadow-page p { font-size: var(--text-body); line-height: 1.65; }
+.meadow-page h3 { font-size: var(--text-body); font-weight: 700; }
+.meadow-eyebrow { color: var(--meadow-lilac); font-size: var(--text-caption); font-weight: 700; letter-spacing: 0.075em; }
+.meadow-page .meadow-eyebrow { font-size: var(--text-caption); }
+.meadow-header { display: grid; grid-template-columns: 1fr auto; gap: 1rem; align-items: end; }
+.meadow-back { grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; width: fit-content; font-size: var(--text-body); }
+.meadow-text-link { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; font-size: var(--text-body); color: var(--meadow-lilac); font-weight: 700; }
+.meadow-page a:focus-visible,
+.meadow-page button:focus-visible,
+.meadow-visit:focus-visible { outline: 3px solid var(--meadow-lilac); outline-offset: 4px; }
+
+.meadow-scene { position: relative; overflow: hidden; isolation: isolate; border-radius: 1.5rem; background: linear-gradient(180deg, var(--meadow-sky), var(--meadow-paper) 65%, var(--meadow-leaf)); min-height: 430px; }
+.meadow-scene-top { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 1rem; }
+.meadow-scene-label { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--text-caption); font-weight: 700; }
+.meadow-hill { position: absolute; border-radius: 50%; z-index: -1; }
+.meadow-hill-back { background: var(--meadow-leaf); width: 95%; height: 250px; bottom: -140px; left: -20%; transform: rotate(8deg); }
+.meadow-hill-front { background: var(--meadow-grass); width: 110%; height: 220px; bottom: -110px; right: -23%; transform: rotate(-10deg); }
+.meadow-cloud { position: absolute; width: 100px; height: 28px; border-radius: 50%; background: var(--meadow-paper); opacity: 0.7; }
+.meadow-cloud::before { content: ""; position: absolute; width: 50px; height: 40px; border-radius: 50%; background: inherit; top: -18px; left: 22px; }
+.meadow-cloud-one { top: 108px; left: 8%; }
+.meadow-cloud-two { top: 168px; right: 7%; width: 75px; opacity: 0.5; }
+.meadow-companion { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; padding: 0 1rem 1.5rem; }
+.meadow-companion-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 0.5rem; }
+.meadow-speech { position: relative; border-radius: 1rem; padding: 0.8rem 1rem; margin: 0.25rem 0 0.35rem; background: var(--meadow-paper); font-size: var(--text-body); line-height: 1.5; text-align: center; max-width: 340px; box-shadow: 0 3px 0 color-mix(in srgb, var(--meadow-ink) 8%, transparent); }
+.meadow-speech::after { content: ""; position: absolute; width: 16px; height: 16px; background: var(--meadow-paper); transform: rotate(45deg); bottom: -6px; left: calc(50% - 8px); z-index: -1; }
+.meadow-dragon { width: min(100%, 290px); height: 250px; object-fit: contain; filter: drop-shadow(0 9px 7px color-mix(in srgb, var(--meadow-ink) 12%, transparent)); }
+.meadow-scene-caption { position: absolute; bottom: 1.2rem; left: 1.2rem; display: flex; flex-direction: column; font-size: var(--text-caption); }
+.meadow-scene-caption span:first-child { font-weight: 700; }
+.meadow-button { display: inline-flex; justify-content: center; align-items: center; gap: 0.5rem; border-radius: 999px; min-height: 46px; padding: 0.7rem 1.1rem; font-size: var(--text-body); font-family: inherit; font-weight: 700; text-decoration: none; transition: transform 160ms ease, box-shadow 160ms ease; }
+.meadow-page .meadow-button-light { background: var(--meadow-paper); color: var(--meadow-ink); border: 1px solid color-mix(in srgb, var(--meadow-ink) 12%, transparent); box-shadow: 0 3px 0 color-mix(in srgb, var(--meadow-ink) 8%, transparent); }
+.meadow-page .meadow-button-primary { background: var(--meadow-lilac); color: var(--meadow-paper); border: 0; box-shadow: 0 4px 0 color-mix(in srgb, var(--meadow-lilac) 65%, var(--meadow-ink)); }
+.meadow-button:not(:disabled):active { transform: translateY(2px); box-shadow: none; }
+.meadow-page .meadow-button:disabled { opacity: 0.65; }
+.meadow-capture { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1rem; padding: 1.5rem; background: var(--meadow-lavender); border-radius: 1.5rem; }
+.meadow-page .meadow-privacy { margin-top: 0.8rem; color: var(--meadow-ink); font-size: var(--text-caption); }
+.meadow-capture .meadow-eyebrow,
+.meadow-visit .meadow-eyebrow { color: var(--meadow-ink); }
+.meadow-error { grid-column: 1 / -1; }
+.meadow-collection { padding: 0.5rem 0; }
+.meadow-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 1rem; }
+.meadow-count { background: var(--meadow-leaf); color: var(--meadow-ink); border-radius: 999px; padding: 0.6rem 0.9rem; font-size: var(--text-caption); font-weight: 700; white-space: nowrap; }
+.meadow-empty { border: 1px dashed color-mix(in srgb, var(--meadow-lilac) 35%, transparent); border-radius: 1rem; padding: 1.75rem 1rem; display: flex; flex-direction: column; align-items: center; gap: 0.5rem; text-align: center; color: var(--meadow-muted); }
+.meadow-empty svg { color: var(--meadow-lilac); }
+.meadow-empty p { color: var(--meadow-ink); font-weight: 700; }
+.meadow-empty span { font-size: var(--text-caption); line-height: 1.65; max-width: 360px; }
+.meadow-keepsakes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; list-style: none; padding: 0; }
+.meadow-keepsake { position: relative; display: flex; align-items: center; gap: 0.75rem; padding: 1rem; border-radius: 1rem; background: color-mix(in srgb, var(--meadow-leaf) 45%, var(--meadow-paper)); }
+.meadow-keepsake p { color: var(--meadow-muted); font-size: var(--text-caption); margin-top: 0.3rem; }
+.meadow-bloom { width: 60px; height: 60px; flex-shrink: 0; display: grid; place-items: center; }
+.meadow-bloom img { width: 100%; height: 100%; object-fit: contain; }
+.meadow-keepsake-new { box-shadow: inset 0 0 0 2px var(--meadow-lilac); }
+.meadow-new-label { position: absolute; top: -6px; right: 0.7rem; font-size: var(--text-tiny); border-radius: 999px; padding: 0.15rem 0.5rem; color: var(--meadow-paper); background: var(--meadow-lilac); }
+.meadow-page .meadow-collection-note { color: var(--meadow-muted); font-size: var(--text-caption); margin-top: 0.75rem; }
+.meadow-receipt { display: flex; align-items: center; gap: 0.75rem; padding: 1rem; border-radius: 1rem; background: var(--meadow-peach); color: var(--meadow-ink); }
+.meadow-receipt > div { flex: 1; }
+.meadow-receipt strong { font-size: var(--text-body); }
+.meadow-page .meadow-receipt p { font-size: var(--text-caption); }
+.meadow-page .meadow-dismiss { font-family: inherit; color: var(--meadow-ink); font-size: var(--text-caption); }
+.meadow-footer { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.75rem; font-size: var(--text-caption); color: var(--meadow-muted); }
+.meadow-visit { display: flex; align-items: center; gap: 1rem; padding: 0.7rem 1.25rem; border-radius: 1.5rem; background: linear-gradient(100deg, var(--meadow-leaf), var(--meadow-paper)); box-shadow: 0 3px 0 color-mix(in srgb, var(--meadow-ink) 8%, transparent); }
+.meadow-visit > img { width: 88px; height: 88px; object-fit: contain; flex-shrink: 0; }
+.meadow-visit > svg { flex-shrink: 0; color: var(--meadow-lilac); }
+.meadow-visit-copy { display: flex; flex: 1; flex-direction: column; gap: 0.3rem; font-size: var(--text-body); }
+.meadow-visit-title { font-size: var(--text-lede); }
+
+.meadow-sheet.parchment-bg-aged { background-image: none; background-color: var(--meadow-paper); color: var(--meadow-ink); font-family: var(--meadow-font); box-shadow: 0 12px 32px color-mix(in srgb, var(--meadow-ink) 15%, transparent); }
+.meadow-sheet label { font-family: inherit; font-weight: 600; }
+.meadow-sheet input:not([type="checkbox"]),
+.meadow-sheet textarea { font-family: inherit; font-size: 1rem; border-color: var(--meadow-lilac); border-radius: 1rem; }
+.meadow-sheet button { border-radius: 999px; font-family: inherit; }
+.meadow-sheet button[type="submit"] { background: var(--meadow-lilac); border-color: var(--meadow-lilac); color: var(--meadow-paper); }
+
+@media (max-width: 767px) {
+  .meadow-page { padding: 1rem; border-radius: 1.5rem; }
+  .meadow-header { grid-template-columns: 1fr; gap: 0.5rem; }
+  .meadow-header > .meadow-text-link { justify-self: start; }
+  .meadow-scene { min-height: 440px; }
+  .meadow-scene-top { align-items: flex-start; flex-wrap: wrap; padding: 0.75rem; }
+  .meadow-scene-top .meadow-button { padding: 0.5rem 0.8rem; font-size: var(--text-caption); }
+  .meadow-companion { padding-bottom: 3.5rem; }
+  .meadow-scene-caption { bottom: 0.9rem; left: 1rem; }
+  .meadow-dragon { height: 230px; }
+  .meadow-capture { grid-template-columns: 1fr; padding: 1.1rem; }
+  .meadow-keepsakes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .meadow-keepsake { flex-direction: column; text-align: center; padding: 1rem 0.5rem; gap: 0.5rem; }
+  .meadow-visit { gap: 0.75rem; padding: 0.6rem 0.85rem; }
+  .meadow-visit > img { width: 64px; height: 72px; }
+  .meadow-visit-copy { font-size: var(--text-caption); }
+  .meadow-visit .meadow-eyebrow { font-size: var(--text-tiny); }
+  .meadow-visit > svg { width: 18px; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .meadow-celebrating .meadow-dragon { animation: meadow-delight 600ms ease-out 1; }
+  @keyframes meadow-delight { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-12px) rotate(-3deg); } 65% { transform: translateY(-4px) rotate(2deg); } }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .meadow-button { transition: none; }
+  .meadow-button:not(:disabled):active { transform: none; }
+}

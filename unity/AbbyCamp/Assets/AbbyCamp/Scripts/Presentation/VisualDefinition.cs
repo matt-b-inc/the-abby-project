@@ -8,6 +8,13 @@ namespace AbbyCamp.Presentation
     {
         public string AppearanceId;
         public GameObject ModelPrefab;
+        [Tooltip("Optional portrait companion. A model takes precedence when assigned.")]
+        public Sprite Portrait;
+        public Sprite HappyPortrait;
+        public Sprite BlinkPortrait;
+        [Min(.1f)] public float PortraitHeight = 1.7f;
+        [Tooltip("Portraits face the camera without rotating their gameplay root.")]
+        public bool BillboardPortrait = true;
         public Vector3 LocalPosition = Vector3.zero;
         public Vector3 LocalEulerAngles = Vector3.zero;
         public Vector3 LocalScale = Vector3.one;

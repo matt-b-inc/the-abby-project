@@ -1,6 +1,22 @@
 # Abby Camp — first Unity prototype
 
-A first Unity prototype connected to the existing Django app. The phone Web prototype demonstrates touch exploration, a following companion, direct task access, and confirmed-save reactions using ready-made Kenney art and animations. **The primary product target is Abby's iPhone on iOS; Android is the first available test device.** The camp theme is provisional, and the existing web app and backend continue to work independently.
+A first Unity prototype connected to the existing Django app. The phone Web prototype now opens a small **Memory Meadow** with a following dragon, touch exploration, direct task access, and confirmed journal keepsakes. The dragon art is a temporary project-authored illustration; the explorer still uses the original Kenney placeholder. **The primary product target is Abby's iPhone on iOS; Android is the first available test device.**
+
+## Shared meadow slice
+
+The child-only web page at `/meadow` is reachable from Today. It uses the existing private-by-default journal form and its interrupted-save reconciliation. A new eligible journal's confirmed reward receipt appears as a **Memory bloom** on both the web page and Play. Editing a journal, greeting the dragon, refreshing, or reopening Play grants nothing. The read-only `/api/chronicle/meadow/` response contains receipt identifiers, dates and counts, never journal words or family replies. It shows the newest 30 blooms and all-time totals, projected from existing journal records; legacy entries without verified awards and administratively deleted entries are not retained as separate collectibles.
+
+Play reads the same authenticated child account, refreshes after browser resume and periodically, and clears the old collection on account changes. Its first visit displays existing blooms without replaying their celebrations. Later new receipts cause one local reaction per origin and child on this device; this acknowledgement is presentation only.
+
+`shared/storybook/presentation.json` and its exported artwork/font are canonical for both clients. Run `python scripts/storybook/sync_presentation.py` after editing them, or `--check` to detect drift. The authored `Assets/AbbyCamp/Presentation/Meadow.asset` holds appearances, palette and shared Nunito font. Rebuilding preserves its appearance references and the authored dragon definition. Replace that definition's portrait or model and animation mapping without changing the companion ID or journal receipt IDs. See [AssetNotes.md](AssetNotes.md) for provenance and replacement details.
+
+For a disposable same-origin React and Unity preview, build both clients and run:
+
+```powershell
+python scripts/unity/web_fixture_server.py --frontend-root frontend/dist --port 8089
+```
+
+This fixture seeds synthetic accounts and writing skills; it never reads `.env` or the project database. Sign in with the fixture credentials, keep a test memory at `/meadow`, then open `/play/` in the same browser. Physical phone performance, keyboard and lifecycle checks remain necessary.
 
 ## Product goal and next slice
 

@@ -260,6 +260,18 @@ namespace AbbyCamp.Services
             }, failure);
         }
 
+        /// <summary>Read-only receipt metadata; no journal text, reward mint, or claim request.</summary>
+        public IEnumerator FetchMeadow(Action<MeadowDto> success, Action<ApiError> failure)
+        {
+            yield return Send("GET", baseUrl + "/api/chronicle/meadow/", null, true, false, json =>
+            {
+                MeadowDto meadow;
+                try { meadow = ApiContract.ParseMeadow(json); }
+                catch (Exception exception) { failure?.Invoke(InvalidResponse(exception, false)); return; }
+                success?.Invoke(meadow);
+            }, failure);
+        }
+
         /// <summary>Retrieves all DRF pages, validates each page URL before sending
         /// credentials, and returns only this account's published active habits
         /// supporting positive taps. Daily-limit rows remain visible for feedback.</summary>

@@ -2,7 +2,11 @@
 
 The prototype contains a small selection of unmodified Kenney models and textures. Each pack's original `License.txt` is retained beside its assets under `Assets/ThirdParty/Kenney`. These license files identify the assets as Creative Commons Zero (CC0), permit personal, educational, and commercial use, and make attribution optional. See [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
 
-Downloaded from the creator's official website on 2026-10-09. No purchased assets, third-party mirrors, or generated art are included.
+Downloaded from the creator's official website on 2026-10-09. No purchased assets or third-party mirrors are included. The temporary Meadow dragon and memory bloom are project-authored artwork; their SVG sources live in `shared/storybook/art` at the repository root.
+
+## Nunito font
+
+The Meadow interfaces use Nunito, copyright 2014 The Nunito Project Authors. The variable font and SIL Open Font License 1.1 were downloaded from the official [Google Fonts Nunito source](https://github.com/google/fonts/tree/main/ofl/nunito) on 2026-10-10. `shared/storybook/fonts` retains both source and license. `Nunito-SemiBold.ttf` is a static weight-600 instance created with fontTools and includes the license in its font metadata. Copies of that font and `OFL.txt` are distributed with both clients through the presentation sync script. The license permits embedding and redistribution subject to its conditions; the font is not sold separately.
 
 | Pack | Version in included license | Files selected | Original license |
 | --- | --- | --- | --- |

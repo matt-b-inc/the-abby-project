@@ -109,7 +109,7 @@ describe('JournalEntryFormModal', () => {
     expect(localStorage.getItem(journalDraftKey(role.user.id))).toBeNull();
     expect(onSaved).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: 'Done' }));
-    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 42 }));
+    expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 42 }), { mode: 'create' });
   });
 
   it.each(['unavailable', 'not_eligible', undefined])('does not invent XP for receipt status %s', async (status) => {

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="body" x2="0.2" y2="1"><stop stop-color="#FFF8EE"/><stop offset="1" stop-color="#E5DCF6"/></linearGradient>
+    <linearGradient id="eyes" x2="0" y2="1"><stop stop-color="#49384F"/><stop offset="1" stop-color="#7560A8"/></linearGradient>
+  </defs>
+  <g stroke="#7560A8" stroke-width="5" stroke-linejoin="round">
+    <path fill="#E5DCF6" d="M168 270Q94 218 70 273L92 310L80 353Q124 324 174 344M343 270Q416 218 443 273L420 310L432 353Q389 324 339 344"/>
+    <path fill="url(#body)" d="M306 360Q396 365 397 408Q392 447 310 427L277 404Z"/>
+    <path fill="url(#body)" d="M184 286Q137 389 184 436Q216 460 259 448Q306 460 332 434Q365 378 330 286Z"/>
+    <ellipse fill="#FFF8EE" cx="258" cy="380" rx="49" ry="59" stroke="none"/>
+    <path fill="#FFF8EE" d="M183 173Q157 126 164 98Q204 121 219 159M294 159Q311 122 350 98Q355 135 335 173"/>
+    <path fill="#E5DCF6" d="M158 191Q132 163 115 170Q133 208 160 217M353 191Q380 163 397 170Q379 208 350 217"/>
+    <path fill="url(#body)" d="M157 196Q159 145 220 153Q244 131 271 151Q344 145 357 201Q379 288 313 311Q256 335 198 310Q132 287 157 196Z"/>
+    <path fill="#E5DCF6" d="M229 157Q244 119 260 111L260 148L282 131L275 161"/>
+    <path fill="none" d="M181 241Q207 249 233 241M279 241Q305 249 331 241" stroke-width="7" stroke-linecap="round"/>
+    <g fill="#F4B6A0" stroke="none" opacity=".65"><ellipse cx="175" cy="272" rx="17" ry="8"/><ellipse cx="337" cy="272" rx="17" ry="8"/></g>
+    <path fill="none" d="M235 281Q256 297 277 281" stroke-width="4" stroke-linecap="round"/>
+    <path fill="url(#body)" d="M183 339Q157 363 178 383Q192 387 205 368M329 339Q357 363 336 383Q321 387 308 368"/>
+    <ellipse fill="#FFF8EE" cx="204" cy="433" rx="32" ry="17"/><ellipse fill="#FFF8EE" cx="313" cy="433" rx="32" ry="17"/>
+  </g>
+</svg>

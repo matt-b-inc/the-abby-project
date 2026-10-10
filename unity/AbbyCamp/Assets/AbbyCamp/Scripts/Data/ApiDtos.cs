@@ -152,6 +152,24 @@ namespace AbbyCamp.Data
         public bool newly_completed;
     }
 
+    [Serializable]
+    public sealed class MeadowDto
+    {
+        public int schema_version;
+        public int keepsake_count;
+        public int journal_xp_awarded;
+        public KeepsakeDto[] keepsakes;
+    }
+
+    [Serializable]
+    public sealed class KeepsakeDto
+    {
+        public string receipt_id;
+        public string type;
+        public string title;
+        public string earned_at;
+    }
+
     public sealed class ApiError
     {
         public readonly string Message;

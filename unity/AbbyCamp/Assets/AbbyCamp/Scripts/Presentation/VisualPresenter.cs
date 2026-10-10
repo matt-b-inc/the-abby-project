@@ -8,6 +8,9 @@ namespace AbbyCamp.Presentation
         [SerializeField] private VisualDefinition definition;
         private Transform model;
         private Animator animator;
+        private SpriteRenderer portrait;
+        private float blinkRemaining;
+        private float nextBlinkAt;
         private Vector3 restPosition;
         private Vector3 restScale;
         private Quaternion restRotation;
@@ -35,9 +38,21 @@ namespace AbbyCamp.Presentation
             }
 
             definition = next;
+            portrait = null;
             GameObject instance;
             if (next != null && next.ModelPrefab != null)
                 instance = Instantiate(next.ModelPrefab, transform);
+            else if (next != null && next.Portrait != null)
+            {
+                instance = new GameObject("Portrait");
+                instance.transform.SetParent(transform, false);
+                portrait = instance.AddComponent<SpriteRenderer>();
+                portrait.sprite = next.Portrait;
+                var height = Mathf.Max(.001f, next.Portrait.bounds.size.y);
+                instance.transform.localScale = Vector3.one * (next.PortraitHeight / height);
+                instance.transform.localPosition = Vector3.up * (next.PortraitHeight * .52f);
+                nextBlinkAt = Time.time + 3.5f;
+            }
             else
             {
                 instance = GameObject.CreatePrimitive(PrimitiveType.Capsule);
@@ -51,11 +66,11 @@ namespace AbbyCamp.Presentation
 
             instance.name = "Appearance";
             model = instance.transform;
-            if (next != null && next.ModelPrefab != null)
+            if (next != null && (next.ModelPrefab != null || next.Portrait != null))
             {
-                model.localPosition = next.LocalPosition;
+                model.localPosition = next.ModelPrefab != null ? next.LocalPosition : model.localPosition + next.LocalPosition;
                 model.localRotation = Quaternion.Euler(next.LocalEulerAngles);
-                model.localScale = next.LocalScale;
+                model.localScale = next.ModelPrefab != null ? next.LocalScale : Vector3.Scale(model.localScale, next.LocalScale);
             }
 
             // Physics belongs to the gameplay root, even when a replacement pack includes colliders.
@@ -80,6 +95,8 @@ namespace AbbyCamp.Presentation
             restPosition = model.localPosition;
             restScale = model.localScale;
             restRotation = model.localRotation;
+            celebrationRemaining = 0f;
+            blinkRemaining = 0f;
         }
 
         public void SetLocomotion(float normalizedSpeed)
@@ -110,6 +127,21 @@ namespace AbbyCamp.Presentation
             var offset = Vector3.zero;
             var rotation = restRotation;
             var scale = restScale;
+            if (portrait != null)
+            {
+                offset.y = Mathf.Sin(Time.time * 2.2f) * .035f;
+                if (definition.BillboardPortrait && Camera.main != null)
+                    rotation = Quaternion.Inverse(transform.rotation) * Camera.main.transform.rotation;
+                if (Time.time >= nextBlinkAt)
+                {
+                    blinkRemaining = .14f;
+                    nextBlinkAt = Time.time + 3.5f + Random.value * 2f;
+                }
+                blinkRemaining = Mathf.Max(0f, blinkRemaining - Time.deltaTime);
+                portrait.sprite = celebrationRemaining > 0f && definition.HappyPortrait != null
+                    ? definition.HappyPortrait
+                    : blinkRemaining > 0f && definition.BlinkPortrait != null ? definition.BlinkPortrait : definition.Portrait;
+            }
             if (!hasSpeed && locomotion > .05f)
                 offset.y = Mathf.Abs(Mathf.Sin(Time.time * 13f)) * .055f * locomotion;
             if (celebrationRemaining > 0f)
@@ -119,7 +151,7 @@ namespace AbbyCamp.Presentation
                 {
                     var progress = 1f - celebrationRemaining / CelebrationDuration;
                     offset.y += Mathf.Abs(Mathf.Sin(progress * Mathf.PI * 3f)) * .4f;
-                    rotation *= Quaternion.Euler(0f, Mathf.Sin(progress * Mathf.PI * 2f) * 18f, 0f);
+                    rotation *= Quaternion.Euler(0f, portrait == null ? Mathf.Sin(progress * Mathf.PI * 2f) * 18f : 0f, portrait != null ? Mathf.Sin(progress * Mathf.PI * 2f) * 6f : 0f);
                     scale *= 1f + Mathf.Sin(progress * Mathf.PI) * .055f;
                 }
             }

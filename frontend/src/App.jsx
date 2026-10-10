@@ -42,6 +42,7 @@ const Character = lazy(() => import('./pages/Character'));
 const TreasuryHub = lazy(() => import('./pages/treasury'));
 const AtlasHub = lazy(() => import('./pages/atlas'));
 const ChronicleHub = lazy(() => import('./pages/chronicle'));
+const Meadow = lazy(() => import('./pages/meadow'));
 // Dev-only showcase — lazy also drops it from the production entry chunk.
 const DesignShowcase = lazy(() => import('./pages/__design'));
 
@@ -202,6 +203,7 @@ export default function App() {
             <Route element={<JournalShell />}>
               {/* Chapter I — Today */}
               <Route path="/" element={<Dashboard />} />
+              <Route path="/meadow" element={<Meadow />} />
 
               {/* Chapter II — Quests (+ deep-link sub-routes for Projects) */}
               <Route path="/quests" element={<QuestsHub />} />

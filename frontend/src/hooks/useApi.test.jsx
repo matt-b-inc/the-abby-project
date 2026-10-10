@@ -32,8 +32,10 @@ describe('useApi', () => {
     const fn = vi.fn(async () => ({ n: ++call }));
     const { result } = renderHook(() => useApi(fn, []));
     await waitFor(() => expect(result.current.data).toEqual({ n: 1 }));
-    await act(async () => { await result.current.reload(); });
+    let confirmed;
+    await act(async () => { confirmed = await result.current.reload(); });
     expect(result.current.data).toEqual({ n: 2 });
+    expect(confirmed).toEqual({ n: 2 });
     expect(fn).toHaveBeenCalledTimes(2);
   });
 
